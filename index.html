@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nyro — a local-first personal AI operating system</title>
+<meta name="description" content="A personal AI operating system: a markdown vault it remembers in, a skill layer that decides what fires, a terminal HUD, and a push-to-talk voice loop where the audio never leaves the machine.">
+<meta property="og:title" content="Nyro — a local-first personal AI operating system">
+<meta property="og:description" content="Markdown memory, small single-purpose skills, a terminal HUD, and offline speech. Built to be readable without the system running.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0d0c'/><rect x='3' y='7' width='2' height='6' fill='%23d8a94a'/><rect x='7' y='4' width='2' height='9' fill='%23d8a94a'/><rect x='11' y='9' width='2' height='4' fill='%23d8a94a'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EAEDEB; --panel:#FFFFFF; --sunk:#F3F5F3;
+  --ink:#151B19; --body:#3B4441; --dim:#6C7873; --line:#D3D9D5;
+  --accent:#9A6C12;
+  --live:#3F7A50; --live-soft:#DFEBE1;
+  --wait:#8A6A1A; --wait-soft:#F2E7CC;
+  --stop:#96473D; --stop-soft:#F2DFDB;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#090C0B; --panel:#111614; --sunk:#0D1211;
+    --ink:#DDE4E0; --body:#AFB9B4; --dim:#78847F; --line:#212A27;
+    --accent:#D8A94A;
+    --live:#72B183; --live-soft:#152018;
+    --wait:#D3A44C; --wait-soft:#241E12;
+    --stop:#C87F73; --stop-soft:#251816;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#090C0B; --panel:#111614; --sunk:#0D1211;
+  --ink:#DDE4E0; --body:#AFB9B4; --dim:#78847F; --line:#212A27;
+  --accent:#D8A94A;
+  --live:#72B183; --live-soft:#152018;
+  --wait:#D3A44C; --wait-soft:#241E12;
+  --stop:#C87F73; --stop-soft:#251816;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--ground);color:var(--body);font-family:var(--sans);
+  font-size:16px;line-height:1.6;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px 80px}
+.col{max-width:68ch}
+h1,h2,h3{color:var(--ink);font-family:var(--mono);text-wrap:balance;margin:0}
+h1{font-size:clamp(30px,5vw,50px);font-weight:600;letter-spacing:-.035em;line-height:1.05}
+h2{font-size:13px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--dim);margin:0 0 18px}
+h3{font-size:17px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
+p{margin:0 0 16px}
+code{font-family:var(--mono);font-size:.9em;background:var(--sunk);
+  border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--ink)}
+a{color:var(--accent)}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section{padding:46px 0;border-top:1px solid var(--line)}
+header{padding:70px 0 38px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 18px}
+.lede{font-size:19px;line-height:1.55;margin:22px 0 0;max-width:60ch}
+.snap{font-family:var(--mono);font-size:12px;color:var(--dim);margin-top:28px;
+  display:flex;gap:8px;flex-wrap:wrap}
+.snap b{color:var(--ink);font-weight:500}
+.rail{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);
+  grid-template-columns:repeat(auto-fit,minmax(184px,1fr))}
+.cell{background:var(--panel);padding:16px 18px;display:flex;flex-direction:column;gap:7px}
+.cell .name{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+.cell .val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--ink);
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 8px;border-radius:2px;font-weight:500}
+.pill::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.p-live{color:var(--live);background:var(--live-soft)}
+.p-wait{color:var(--wait);background:var(--wait-soft)}
+.p-stop{color:var(--stop);background:var(--stop-soft)}
+.pipe{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.stage{background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.stage .n{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.1em;
+  display:block;margin-bottom:9px;font-weight:600}
+.stage .t{font-family:var(--mono);font-size:12px;color:var(--dim);margin-top:8px;
+  padding-top:8px;border-top:1px dashed var(--line)}
+.stage p{font-size:14px;margin:0}
+.skills{display:grid;gap:1px;background:var(--line);border:1px solid var(--line)}
+.skill{background:var(--panel);padding:15px 18px;display:grid;gap:3px 18px;
+  grid-template-columns:120px 1fr}
+.skill .k{font-family:var(--mono);font-weight:600;color:var(--ink);font-size:15px}
+.skill .d{font-size:14px}
+.skill .fire{grid-column:2;font-size:13px;color:var(--dim);font-family:var(--mono)}
+@media(max-width:620px){.skill{grid-template-columns:1fr}.skill .fire{grid-column:1}}
+.tri{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.fold{background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.fold .path{font-family:var(--mono);color:var(--accent);font-weight:600;font-size:14px}
+.fold p{font-size:14px;margin:8px 0 0}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:520px}
+th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim);font-weight:500;
+  padding:0 14px 10px 0;border-bottom:1px solid var(--line)}
+td{padding:11px 14px 11px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td.num{font-family:var(--mono);color:var(--ink);font-variant-numeric:tabular-nums;
+  white-space:nowrap;font-weight:500}
+.cmd{font-family:var(--mono);font-size:13px;background:var(--sunk);
+  border:1px solid var(--line);padding:9px 12px;color:var(--ink);
+  overflow-x:auto;white-space:nowrap;max-width:68ch}
+.block{background:var(--panel);border:1px solid var(--line);
+  border-left:3px solid var(--stop);padding:18px 20px;margin-bottom:12px;max-width:68ch}
+.block h3{font-family:var(--mono);font-size:15px}
+.block p{font-size:14px;margin:6px 0 10px}
+.foot{color:var(--dim);font-size:14px;padding-top:36px;
+  border-top:1px solid var(--line);margin-top:46px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Local-first personal AI</p>
+  <h1>Nyro</h1>
+  <p class="lede">An assistant built out of four small parts: a markdown vault it remembers
+  in, a skill layer that decides what fires, a terminal instrument panel, and a push-to-talk
+  voice loop where the audio never leaves the machine.</p>
+  <p class="snap"><span>Zero npm dependencies</span><span>·</span><span>Node 18+</span>
+    <span>·</span><span><b>333</b> tests</span><span>·</span><span>Windows, macOS, Linux</span></p>
+</header>
+
+<div class="rail">
+  <div class="cell"><span class="name">Vault</span><span class="val">markdown</span>
+    <span class="pill p-live">no database</span></div>
+  <div class="cell"><span class="name">Skills</span><span class="val">5 core</span>
+    <span class="pill p-live">trigger-routed</span></div>
+  <div class="cell"><span class="name">HUD</span><span class="val">:4174</span>
+    <span class="pill p-live">reads the vault</span></div>
+  <div class="cell"><span class="name">Voice</span><span class="val">offline</span>
+    <span class="pill p-live">verified</span></div>
+  <div class="cell"><span class="name">Mail</span><span class="val">—</span>
+    <span class="pill p-stop">needs oauth</span></div>
+</div>
+
+<section>
+  <h2>The idea</h2>
+  <div class="col">
+    <p>Most assistants are one enormous prompt. This one is small parts that load only when
+    they match, so the context stays clean and the instructions never compete with each
+    other.</p>
+    <p>The constraint that shapes everything: <strong>you have to be able to read everything
+    it knows in a text editor, with nothing running.</strong> No database, no proprietary
+    index. That rules out a lot of convenient designs, and it is why memory is folders of
+    <code>.md</code> files with YAML frontmatter and wikilinks rather than anything
+    cleverer.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Install</h2>
+  <div class="col"><p>One command, and it defaults to a dry run that writes nothing:</p></div>
+  <div class="cmd">npm run setup</div>
+  <div class="cmd" style="margin-top:8px">npm run setup -- --yes</div>
+  <div class="col" style="margin-top:18px">
+    <p>It <strong>never overwrites an existing vault page</strong> and never downloads
+    without <code>--yes</code>. Re-running tops up what is missing and reports what it left
+    alone — verified by editing a page, deleting another, and running it again.</p>
+    <p>Where a platform has no prebuilt binary it prints that platform's install command
+    rather than failing, or worse, appearing to succeed.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Voice loop</h2>
+  <div class="col"><p>Hold the key, speak, release. Speech-to-text and text-to-speech both
+  run on the CPU — no audio is uploaded, which is the part browser speech APIs get
+  wrong.</p></div>
+  <div class="pipe">
+    <div class="stage"><span class="n">01 — CAPTURE</span>
+      <p>ffmpeg records to 16&nbsp;kHz mono, the rate whisper wants, so nothing resamples
+      later. The device is detected at startup.</p>
+      <div class="t">dshow · avfoundation · alsa</div></div>
+    <div class="stage"><span class="n">02 — TRANSCRIBE</span>
+      <p>whisper.cpp. Recording is stopped with <code>q</code>, never a kill — a killed
+      ffmpeg leaves a truncated header.</p>
+      <div class="t">ggml-base.en · 4.2× realtime</div></div>
+    <div class="stage"><span class="n">03 — ANSWER</span>
+      <p>The text goes to Claude Code, so speaking reaches the same skills typing does.
+      Falls back to local agents when signed out.</p>
+      <div class="t">claude -p</div></div>
+    <div class="stage"><span class="n">04 — SPEAK</span>
+      <p>Piper reads the answer back. Markdown is stripped first — asterisks and backticks
+      are for eyes.</p>
+      <div class="t">en_US-amy-medium</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Skill layer</h2>
+  <div class="col"><p>One job each. The description carries the trigger, so the right one
+  fires without being named — and the boundaries are drawn so two never fire on the same
+  sentence.</p></div>
+  <div class="skills">
+    <div class="skill"><span class="k">vault</span>
+      <span class="d">Reads and writes the markdown vault. Every other skill persists
+      through it, so exactly one place knows the schema.</span>
+      <span class="fire">"save this" · "what did I decide about X"</span></div>
+    <div class="skill"><span class="k">plan</span>
+      <span class="d">Today's three priorities to a dated file. Carries unfinished items
+      forward and flags anything carried three days running.</span>
+      <span class="fire">"what should I work on"</span></div>
+    <div class="skill"><span class="k">inbox</span>
+      <span class="d">Mail and calendar filtered to what is time-bound, blocking someone, or
+      expensive to keep ignoring. Reports fewer than three rather than padding.</span>
+      <span class="fire">"what's on today" · "what did I miss"</span></div>
+    <div class="skill"><span class="k">trends</span>
+      <span class="d">Scans a watchlist and diffs against the last scan. A story that has
+      not developed is not repeated.</span>
+      <span class="fire">"what's new" — never "what is X"</span></div>
+    <div class="skill"><span class="k">metrics</span>
+      <span class="d">Tracked numbers with the change since last time. An unconfigured
+      source reports as unconfigured, never as zero.</span>
+      <span class="fire">"how are my numbers"</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Vault</h2>
+  <div class="col"><p>Three folders, and the distinction between them is the whole design:
+  raw is what was said, wiki is what is now believed, outputs are what was sent. Collapsing
+  them is how a notes system becomes a junk drawer.</p></div>
+  <div class="tri">
+    <div class="fold"><span class="path">raw/</span>
+      <p>Unedited capture — transcripts, dumps, clippings. Dated, because raw material is
+      found by when it arrived.</p></div>
+    <div class="fold"><span class="path">wiki/</span>
+      <p>Distilled knowledge, one page per topic, rewritten in place. No date in the
+      filename: a dated wiki page means the topic got forked instead of updated.</p></div>
+    <div class="fold"><span class="path">outputs/</span>
+      <p>Everything the system ships. Always dated, never rewritten — tomorrow's brief is a
+      new file, not an edit of today's.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Measured, not estimated</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Check</th><th>Result</th><th>How it was verified</th></tr></thead>
+      <tbody>
+        <tr><td>Full voice loop</td><td class="num">end to end</td>
+          <td>A synthesised phrase played through the speakers, picked up by the mic,
+          transcribed, answered and spoken back</td></tr>
+        <tr><td>Transcription speed</td><td class="num">4.2× realtime</td>
+          <td>11&nbsp;s of audio in 2.6&nbsp;s on six threads</td></tr>
+        <tr><td>Transcription accuracy</td><td class="num">word-for-word</td>
+          <td>A known sample, checked against its actual text</td></tr>
+        <tr><td>Test suite</td><td class="num">333 pass</td>
+          <td>Run before every commit, 0 failures</td></tr>
+        <tr><td>Vault pages preserved</td><td class="num">4 of 4</td>
+          <td>Edited one, deleted one, re-ran setup — the edit survived, the deletion was
+          restored</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="col" style="margin-top:20px"><p>One finding worth keeping: room noise comes
+  back from whisper as <code>(dramatic music)</code>, not as silence. Left unfiltered, an
+  empty room sends that onward as a prompt.</p></div>
+</section>
+
+<section>
+  <h2>What runs where</h2>
+  <div class="col"><p>The vault, skills and HUD are plain Node and run anywhere. The voice
+  layer has one real limit, stated rather than papered over.</p></div>
+  <div class="tri">
+    <div class="fold"><span class="path">Windows</span>
+      <p>Everything, including hold-to-talk on a global keyboard hook.</p></div>
+    <div class="fold"><span class="path">macOS · Linux</span>
+      <p>Everything except the global hotkey. Enter starts, Enter sends — the same signal
+      file, so nothing downstream can tell the difference.</p></div>
+    <div class="fold"><span class="path">Why</span>
+      <p>A low-level keyboard hook off Windows needs a native module or permissions an
+      installer cannot grant. A feature that quietly does nothing on your platform is worse
+      than one that tells you what it is.</p></div>
+  </div>
+  <div class="col" style="margin-top:20px"><p>The subtle one: macOS lists video and audio
+  devices under the same <code>[0]</code>/<code>[1]</code> indices in a single listing, video
+  first. Parsing it whole records the <em>webcam</em> — and it does not error, it captures
+  silence from the wrong device. There is a test asserting exactly that.</p></div>
+</section>
+
+<section>
+  <h2>Still open</h2>
+  <div class="block">
+    <h3>Mail has no working path</h3>
+    <p>There is no Gmail connector, so the only route is a Google OAuth client of your own —
+    a console step, then a device-flow sign-in. Calendar already works through a connector;
+    mail does not. Until then the brief runs on calendar, tasks and the vault, and says so
+    rather than quietly returning a short list.</p>
+  </div>
+  <div class="col" style="margin-top:8px"><p>The voice loop prefers Claude Code and falls
+  back to local agents when it is signed out, so it answers either way — narrower when
+  local, but never dead.</p></div>
+</section>
+
+<p class="foot">Built with Claude Code. The instrument panel runs only on the machine that
+holds the vault; this page is documentation, not a live view.</p>
+
+</div>
+</body>
+</html>
