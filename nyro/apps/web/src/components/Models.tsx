@@ -6,7 +6,7 @@
  * never read back — the field shows only a last-4 hint afterwards.
  */
 import { useEffect, useState } from "react";
-import { api, NyroApiError, type Model, type Preset, type Provider } from "../api.ts";
+import { api, NyroApiError, type Model, type ModelPerformance, type Preset, type Provider } from "../api.ts";
 import { Badge, Button, Dot, Empty, Field, formatCost, inputClass, Panel } from "./ui.tsx";
 
 export function Models({
@@ -15,11 +15,17 @@ export function Models({
   providers: Provider[]; models: Model[]; refresh: () => Promise<void>;
 }) {
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [perf, setPerf] = useState<Map<string, ModelPerformance>>(new Map());
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => { void api.presets().then(setPresets).catch(() => setPresets([])); }, []);
+  useEffect(() => {
+    void api.performance()
+      .then((p) => setPerf(new Map(p.models.map((m) => [m.modelId, m]))))
+      .catch(() => setPerf(new Map()));
+  }, [models]);
 
   async function run(label: string, fn: () => Promise<string>): Promise<void> {
     setPending(label);
@@ -159,7 +165,30 @@ export function Models({
                         ? "free"
                         : `${formatCost(m.inputCostPer1m)} / ${formatCost(m.outputCostPer1m)}`}
                     </td>
-                    <td className="py-2 pr-3 text-dim">{m.scores.speed}</td>
+                    <td className="py-2 pr-3">
+                      {(() => {
+                        const observed = perf.get(m.id);
+                        if (observed?.inUse && observed.measuredSpeedScore !== null) {
+                          return (
+                            <span
+                              className="text-live"
+                              title={`Measured: ${observed.medianTokensPerSecond} tok/s over ${observed.samples} runs`}
+                            >
+                              {observed.measuredSpeedScore}
+                            </span>
+                          );
+                        }
+                        if (observed) {
+                          return (
+                            <span className="text-dim" title={`Measuring: ${observed.samples} run(s) so far`}>
+                              {m.scores.speed}
+                              <span className="ml-1 text-[10px] text-wait">·{observed.samples}</span>
+                            </span>
+                          );
+                        }
+                        return <span className="text-dim">{m.scores.speed}</span>;
+                      })()}
+                    </td>
                     <td className="py-2 pr-3 text-dim">{m.scores.reasoning}</td>
                     <td className="py-2 pr-3 text-dim">{m.scores.coding}</td>
                     <td className="py-2 pr-3">
@@ -184,9 +213,12 @@ export function Models({
                 ))}
               </tbody>
             </table>
-            <p className="mt-3 text-[11px] text-dim">
-              Speed, reasoning and coding are routing heuristics, not benchmark results. Measured scores
-              from real runs are Phase 2 work.
+            <p className="prose-sans mt-3 text-[11.5px] leading-relaxed text-dim">
+              Reasoning and coding scores are heuristics from the model's name, not benchmarks. Speed is
+              different: a <span className="text-live">green</span> figure is measured from real runs
+              (median output tokens per second) and is what the router actually uses. A grey figure with
+              <span className="text-wait"> ·n</span> is still the guess, with n runs recorded so far —
+              NYRO waits for enough evidence before trusting a measurement over the catalog.
             </p>
           </div>
         )}

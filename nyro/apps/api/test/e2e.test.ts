@@ -708,6 +708,71 @@ describe("routing rules (spec §10)", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("measured routing (spec §102)", () => {
+  test("reports measurements gathered from real runs", async () => {
+    // Earlier tests in this file have already driven traffic through the local
+    // model, so there is genuine data to measure.
+    const p = await json<{ enabled: boolean; minSamples: number; models: Array<{ modelId: string; samples: number; medianTokensPerSecond: number; inUse: boolean }> }>(
+      "/api/performance",
+    );
+    assert.equal(p.enabled, true);
+    assert.ok(p.minSamples >= 1);
+    const local = p.models.find((m) => m.modelId === "ollama:llama3.2:1b");
+    assert.ok(local, `no measurement for the local model: ${JSON.stringify(p.models)}`);
+    assert.ok(local!.samples > 0);
+    assert.ok(local!.medianTokensPerSecond > 0, "throughput should be positive");
+  });
+
+  test("a model below the sample threshold is reported but not acted on", async () => {
+    const p = await json<{ minSamples: number; models: Array<{ samples: number; inUse: boolean; measuredSpeedScore: number | null }> }>(
+      "/api/performance",
+    );
+    for (const m of p.models) {
+      if (m.samples < p.minSamples) {
+        assert.equal(m.inUse, false, "acted on a measurement with too few samples");
+        assert.equal(m.measuredSpeedScore, null);
+      }
+    }
+  });
+
+  test("measured routing can be turned off and on", async () => {
+    await api("/api/performance", { method: "PUT", body: JSON.stringify({ enabled: false }) });
+    assert.equal((await json<{ enabled: boolean }>("/api/performance")).enabled, false);
+    await api("/api/performance", { method: "PUT", body: JSON.stringify({ enabled: true }) });
+    assert.equal((await json<{ enabled: boolean }>("/api/performance")).enabled, true);
+  });
+
+  test("cancellations do not count against a model's success rate", async () => {
+    const before = await json<{ models: Array<{ modelId: string; successRate: number }> }>("/api/performance");
+    const beforeRate = before.models.find((m) => m.modelId === "ollama:llama3.2:1b")?.successRate ?? 1;
+
+    const ac = new AbortController();
+    try {
+      const res = await fetch(`${baseUrl}/api/chat/stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "cancel me", mode: "local_only" }),
+        signal: ac.signal,
+      });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let seen = "";
+      while (!seen.includes("event: delta")) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        seen += decoder.decode(value, { stream: true });
+      }
+      ac.abort();
+    } catch { /* the abort is the point */ }
+    await new Promise((r) => setTimeout(r, 600));
+
+    const after = await json<{ models: Array<{ modelId: string; successRate: number }> }>("/api/performance");
+    const afterRate = after.models.find((m) => m.modelId === "ollama:llama3.2:1b")?.successRate ?? 1;
+    assert.ok(afterRate >= beforeRate - 0.001, `a cancellation lowered the success rate: ${beforeRate} -> ${afterRate}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("persistence across a restart", () => {
   test("providers, models and conversations survive a full app restart", async () => {
     // Crash-recovery groundwork (spec §141): state lives in Postgres, not memory.

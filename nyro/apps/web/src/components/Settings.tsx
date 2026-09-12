@@ -6,7 +6,7 @@
  * distrust or forget, and both end badly.
  */
 import { useEffect, useState } from "react";
-import { api, NyroApiError, type BudgetConfig, type BudgetState, type Model, type Provider, type RoutingRule } from "../api.ts";
+import { api, NyroApiError, type BudgetConfig, type BudgetState, type Model, type PerformanceState, type Provider, type RoutingRule } from "../api.ts";
 import { Badge, Button, Empty, Field, formatCost, inputClass, Panel } from "./ui.tsx";
 
 /** An empty field means "no limit", which is different from zero. */
@@ -153,6 +153,8 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
         </div>
       </Panel>
 
+      <MeasuredRoutingPanel />
+
       <RoutingRulesPanel providers={providers} models={models} />
 
       <Panel title="Per-provider monthly caps">
@@ -193,6 +195,87 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
         )}
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Measured routing (spec §13, §102, §147).
+ *
+ * The switch exists because §147 is explicit that the user must be able to
+ * override a learned system. It defaults ON, because a measurement is simply
+ * better evidence than a guess from a model's name — and the UI marks which
+ * is which, so nothing here is hidden.
+ */
+function MeasuredRoutingPanel() {
+  const [state, setState] = useState<PerformanceState | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load(): Promise<void> {
+    try { setState(await api.performance()); } catch { setState(null); }
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function toggle(enabled: boolean): Promise<void> {
+    setBusy(true);
+    try { await api.setMeasuredRouting(enabled); await load(); } finally { setBusy(false); }
+  }
+
+  if (!state) return null;
+  const measured = state.models.filter((m) => m.inUse);
+  const learning = state.models.filter((m) => !m.inUse);
+
+  return (
+    <Panel
+      title="Measured routing"
+      actions={
+        <Button onClick={() => void toggle(!state.enabled)} disabled={busy}>
+          {state.enabled ? "Turn off" : "Turn on"}
+        </Button>
+      }
+    >
+      <p className="prose-sans text-[11.5px] leading-relaxed text-dim">
+        {state.enabled
+          ? "NYRO is ranking models on speed it measured from your own runs, not on guesses from the model name."
+          : "Turned off. NYRO is ranking models on the catalog's guessed speed scores."}{" "}
+        A model needs {state.minSamples} successful runs before its measurement is trusted. Speed is median
+        output tokens per second, so a longer answer is not mistaken for a slower model.
+      </p>
+
+      {measured.length > 0 ? (
+        <table className="mt-3 w-full text-left text-xs">
+          <thead className="text-[10px] uppercase tracking-wider text-dim">
+            <tr className="border-b border-line">
+              <th className="py-2 pr-3">Model</th>
+              <th className="py-2 pr-3">Tokens/sec</th>
+              <th className="py-2 pr-3">Success</th>
+              <th className="py-2 pr-3">Runs</th>
+              <th className="py-2">Speed score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {measured.map((m) => (
+              <tr key={m.modelId} className="border-b border-line/50">
+                <td className="py-2 pr-3 text-ink">{m.modelId}</td>
+                <td className="py-2 pr-3 text-dim tabular">{m.medianTokensPerSecond}</td>
+                <td className={`py-2 pr-3 tabular ${m.successRate < 0.95 ? "text-wait" : "text-dim"}`}>
+                  {Math.round(m.successRate * 100)}%
+                </td>
+                <td className="py-2 pr-3 text-dim tabular">{m.samples}</td>
+                <td className="py-2 text-live tabular">{m.measuredSpeedScore}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <Empty>No model has enough runs yet. Use NYRO and measurements will appear here.</Empty>
+      )}
+
+      {learning.length > 0 ? (
+        <p className="prose-sans mt-2 text-[11.5px] text-dim">
+          Still gathering evidence: {learning.map((m) => `${m.modelId} (${m.samples})`).join(", ")}.
+        </p>
+      ) : null}
+    </Panel>
   );
 }
 

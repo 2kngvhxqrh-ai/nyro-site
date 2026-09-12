@@ -14,8 +14,9 @@ import type { EventBus } from "../core/events.ts";
 import { systemHealth } from "../core/health.ts";
 import type { Registry } from "../core/registry.ts";
 import type { ChatService } from "../core/chat-service.ts";
-import { BUDGET_SETTINGS_KEY, ROUTING_RULES_SETTINGS_KEY } from "../core/chat-service.ts";
+import { BUDGET_SETTINGS_KEY, LEARNING_SETTINGS_KEY, ROUTING_RULES_SETTINGS_KEY } from "../core/chat-service.ts";
 import { routingRulesSchema, validateRuleTargets } from "../core/routing-rules.ts";
+import { adjustmentFor, MIN_SAMPLES } from "../core/performance.ts";
 import { budgetConfigSchema, evaluateBudget, DEFAULT_BUDGET } from "../core/budget.ts";
 import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import type { Pool } from "../db/pool.ts";
@@ -353,6 +354,34 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     if (problem) throw new NyroError("bad_request", problem, { component: "http" });
 
     await deps.settings.set(ROUTING_RULES_SETTINGS_KEY, body);
+    sendJson(ctx.res, 200, body);
+  });
+
+  // ---- Measured performance (spec §13, §102) ------------------------------
+  r.get("/api/performance", async (ctx) => {
+    const rows = await deps.runs.performance();
+    sendJson(ctx.res, 200, {
+      enabled: await deps.chat.measuredRoutingEnabled(),
+      minSamples: MIN_SAMPLES,
+      models: rows.map((row) => {
+        const adj = adjustmentFor(row);
+        return {
+          modelId: row.modelId,
+          medianTokensPerSecond: Number(row.medianTokensPerSecond.toFixed(2)),
+          successRate: Number(row.successRate.toFixed(3)),
+          samples: row.samples,
+          // Null until there is enough evidence, so the UI can say "measuring"
+          // rather than showing a figure NYRO is not yet acting on.
+          measuredSpeedScore: adj ? adj.speed : null,
+          inUse: adj !== null,
+        };
+      }),
+    });
+  });
+
+  r.put("/api/performance", async (ctx) => {
+    const body = parseOr400(z.object({ enabled: z.boolean() }), await readJsonBody(ctx.req));
+    await deps.settings.set(LEARNING_SETTINGS_KEY, body);
     sendJson(ctx.res, 200, body);
   });
 

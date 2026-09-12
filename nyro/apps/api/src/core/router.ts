@@ -126,7 +126,10 @@ function reasonsFor(model: RegisteredModel, req: RoutingRequest, cost: number): 
   if (model.local) out.push("runs locally, no data leaves this machine");
   if (cost === 0) out.push("free to run");
   else out.push(`~$${cost.toFixed(4)} estimated`);
-  if (req.mode === "fastest") out.push(`speed score ${model.scores.speed}/10`);
+  if (req.mode === "fastest") {
+    const m = req.observed?.get(model.id);
+    out.push(`speed score ${m ? m.speed : model.scores.speed}/10${m ? " (measured)" : ""}`);
+  }
   if (req.mode === "best") out.push(`reasoning score ${model.scores.reasoning}/10`);
   if ([...req.requiredCapabilities, ...req.preferredCapabilities].includes("coding")) {
     out.push(`coding score ${model.scores.coding}/10`);
@@ -197,10 +200,18 @@ function scoreAll(models: RegisteredModel[], req: RoutingRequest): RoutingCandid
   const w = weightsFor(req.mode);
   const candidates = models.map((model) => {
     const cost = estimateCostUsd(model, req);
+
+    // A measured speed beats a guessed one. The registry's score comes from the
+    // model's NAME; this comes from runs NYRO actually performed.
+    const measured = req.observed?.get(model.id);
+    const speed = measured ? measured.speed : model.scores.speed;
+
     let score =
       qualityScore(model, [...req.requiredCapabilities, ...req.preferredCapabilities]) * w.quality +
-      model.scores.speed * w.speed +
+      speed * w.speed +
       costScore(cost) * w.cost;
+
+    if (measured) score -= measured.reliabilityPenalty;
 
     // Tie-breakers that reflect stated principles rather than raw numbers.
     if (model.local) score += 0.25;                 // local-first (spec §1.5)
@@ -208,6 +219,9 @@ function scoreAll(models: RegisteredModel[], req: RoutingRequest): RoutingCandid
     if (model.health === "unknown") score -= 0.25;  // never health-checked yet
 
     const reasons = reasonsFor(model, req, cost);
+    // Say when a number is measured, so an observation is never mistaken for
+    // the catalog's guess (spec §131).
+    if (measured) reasons.push(measured.note);
 
     // A model named by a rule outranks one matched only by its provider, so a
     // specific rule is not diluted by a general one.

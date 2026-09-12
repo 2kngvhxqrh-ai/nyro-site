@@ -527,6 +527,48 @@ export class RunRepo {
   }
 
   /**
+   * Observed performance per model, for measured routing (spec §102).
+   *
+   * Median rather than mean, so one cold start or one network stall does not
+   * define a model's reputation. Throughput rather than latency, because a
+   * longer answer legitimately takes longer and ranking on wall-clock would
+   * bias routing toward whichever model got the short prompts.
+   *
+   * Cancellations are excluded from both the throughput sample and the success
+   * rate: the user stopping a response says nothing about the model.
+   */
+  async performance(sinceDays = 30): Promise<Array<{
+    modelId: string; medianTokensPerSecond: number; successRate: number; samples: number;
+  }>> {
+    try {
+      const { rows } = await this.pool.query<{
+        model_id: string; median_tps: number | null; ok_count: number; attempt_count: number;
+      }>(
+        `select
+           model_id,
+           percentile_cont(0.5) within group (
+             order by output_tokens::numeric / (latency_ms::numeric / 1000)
+           ) filter (where ok and output_tokens > 0 and latency_ms > 0) as median_tps,
+           count(*) filter (where ok)::int as ok_count,
+           count(*) filter (where error_code is distinct from 'cancelled')::int as attempt_count
+         from model_runs
+        where created_at > now() - ($1 || ' days')::interval
+        group by model_id`,
+        [String(sinceDays)],
+      );
+      return rows
+        .filter((r) => r.median_tps !== null && r.attempt_count > 0)
+        .map((r) => ({
+          modelId: r.model_id,
+          medianTokensPerSecond: Number(r.median_tps),
+          successRate: r.ok_count / r.attempt_count,
+          samples: r.ok_count,
+        }));
+    } catch (err) {
+      throw dbError(err, "computing model performance");
+    }
+  }
+  /**
    * Money actually spent, by period and by provider.
    *
    * Uses date_trunc rather than a rolling window, so "daily" means the calendar

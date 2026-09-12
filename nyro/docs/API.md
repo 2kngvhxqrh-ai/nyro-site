@@ -149,6 +149,21 @@ event, not an HTTP status.
 - `POST /api/conversations` — `{ "title": "…" }`
 - `GET /api/conversations/:id/messages`
 
+## Measured performance (spec §13, §102)
+
+### `GET /api/performance`
+Per-model median output tokens per second, success rate, sample count, and the
+speed score derived from it. `inUse` is false until a model has `minSamples`
+successful runs — below that NYRO reports the measurement but keeps using the
+catalog's guess.
+
+Throughput, not latency: a longer answer legitimately takes longer, and ranking
+on wall-clock would bias routing toward whichever model got short prompts.
+Cancellations are excluded from both throughput and success rate.
+
+### `PUT /api/performance`
+`{ "enabled": boolean }` — turns measured routing off or on. Defaults to on.
+
 ## Routing rules (spec §10)
 
 ### `GET /api/routing-rules` · `PUT /api/routing-rules`

@@ -11,6 +11,7 @@
  * agent produces the same structure. Nothing downstream changes.
  */
 import type { ConversationRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
+import { buildPerformanceIndex } from "./performance.ts";
 import {
   DEFAULT_ROUTING_RULES,
   preferencesFor,
@@ -91,6 +92,8 @@ const HISTORY_TURNS = 20;
 export const BUDGET_SETTINGS_KEY = "budget";
 /** Where the user's task-specific routing rules live (spec §10). */
 export const ROUTING_RULES_SETTINGS_KEY = "routing_rules";
+/** Whether measured performance may override the registry's guessed scores. */
+export const LEARNING_SETTINGS_KEY = "measured_routing";
 
 export class ChatService {
   private readonly registry: Registry;
@@ -127,6 +130,17 @@ export class ChatService {
     return parsed.success ? parsed.data : DEFAULT_BUDGET;
   }
 
+  /**
+   * Whether measured routing is on. Defaults to ON: measurements are strictly
+   * better evidence than a guess from a model's name, and the UI always says
+   * when a score is measured. §147 is satisfied by the switch existing, not by
+   * defaulting to the weaker data.
+   */
+  async measuredRoutingEnabled(): Promise<boolean> {
+    const raw = await this.settings.get<{ enabled?: boolean }>(LEARNING_SETTINGS_KEY);
+    return raw?.enabled !== false;
+  }
+
   /** Stored routing rules, falling back to none. */
   async routingRules(): Promise<RoutingRules> {
     const raw = await this.settings.get<unknown>(ROUTING_RULES_SETTINGS_KEY);
@@ -147,6 +161,11 @@ export class ChatService {
     const spend = await this.runs.spend();
     const budget = evaluateBudget(config, spend, { privacy: input.privacy, mode: input.mode });
     const { rules } = await this.routingRules();
+
+    // Measured performance, when there is enough of it to beat a guess.
+    const observed = (await this.measuredRoutingEnabled())
+      ? buildPerformanceIndex(await this.runs.performance())
+      : undefined;
 
     const messages: ChatMessage[] = [];
     if (input.systemPrompt) messages.push({ role: "system", content: input.systemPrompt });
@@ -175,6 +194,7 @@ export class ChatService {
       requestedModelId: input.modelId,
       requestedProviderId: input.providerId,
       excludedProviderIds: exhaustedProviders(config, spend),
+      ...(observed ? { observed } : {}),
       // "chat" is the one genuine requirement for a chat turn; everything the
       // keyword pass guessed is a preference.
       requiredCapabilities,

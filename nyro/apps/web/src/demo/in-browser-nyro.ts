@@ -314,6 +314,15 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
   }
 
+  if (path === "/api/performance" && method === "GET") {
+    // The demo's runs are simulated, so it reports no measurements rather than
+    // presenting made-up throughput figures as observations.
+    return jsonResponse(200, { enabled: true, minSamples: 5, models: [] });
+  }
+  if (path === "/api/performance" && method === "PUT") {
+    return errorResponse(409, "config_error", "Changing measured routing needs the real NYRO API.");
+  }
+
   if (path === "/api/routing-rules" && method === "GET") {
     return jsonResponse(200, { rules: [] });
   }

@@ -101,6 +101,12 @@ export interface RoutingRequest {
    * or turn an unavailable model into a hard failure.
    */
   preferences?: Array<{ modelId: string | null; providerId: string | null; reason: string }>;
+  /**
+   * Measured performance per model id (spec §102), replacing the registry's
+   * guessed speed score where NYRO has enough real runs to justify it.
+   * Absent entries keep their heuristic score.
+   */
+  observed?: Map<string, { speed: number; reliabilityPenalty: number; note: string }>;
 }
 
 export interface RoutingCandidate {

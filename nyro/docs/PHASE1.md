@@ -34,13 +34,14 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-160 automated tests, run repeatedly with no flakes.
+183 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
 | `router.test.ts` | 24 | privacy constraints, modes, overrides, determinism, hard vs soft capabilities |
 | `providers.test.ts` | 21 | all three wire protocols against real HTTP servers, chunk boundaries, error mapping, cross-transport cancellation |
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
+| `performance.test.ts` | 19 | measured throughput overrides guessed speed, but only with enough evidence |
 | `routing-rules.test.ts` | 20 | rules steer routing, and can never beat privacy, budget or availability |
 | `budget.test.ts` | 22 | spending limits: period caps, per-provider caps, and the cases where a budget must NOT fire |
 | `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
@@ -121,9 +122,9 @@ In dependency order:
 
 1. **A live-provider smoke test.** The only remaining unknown is real vendor
    behaviour. One opt-in script, run with real keys, closes it.
-2. **Router learning from `model_runs`** (§102) — the data is already recorded.
-   Replace heuristic speed scores with measured ones first; they are the least
-   defensible numbers in the system.
+2. ~~**Router learning from `model_runs`** (§102)~~ — **done.** Speed is now
+   measured from real runs (median output tokens per second) once a model has
+   enough of them. Reasoning and coding scores remain heuristics.
 3. **Native Gemini adapter**, proving a third wire format.
 4. ~~**Budget enforcement** (§66)~~ — **done.** Daily, weekly, monthly,
    per-request and per-provider caps, enforced before a model is called.

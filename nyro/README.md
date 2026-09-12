@@ -1,7 +1,8 @@
 # NYRO — Phase 1 (Foundation)
 
 A personal AI operating system. This directory contains **Phase 1** (the
-foundation) plus **Phase 2**: enforced spending limits and task-specific routing rules.
+foundation) plus **Phase 2**: enforced spending limits, task-specific routing rules,
+and routing that learns model speed from real runs.
 
 ```
 User → NYRO Web UI → NYRO API → NYRO Core → Model Router → Provider adapters → Response
@@ -13,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (160 tests) and was
+Everything in this list is covered by the test suite (183 tests) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -30,6 +31,7 @@ verified running against a real Postgres and a real browser.
 | Health checks per component; per-model run/latency/cost stats | working |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |
 | Task-specific routing rules ("coding goes to Claude") | working, tested |
+| Measured routing: speed learned from real runs, not guessed | working, tested |
 | Single-process mode: the API serves the built UI on one origin | working |
 | Static serving that refuses path traversal | working, tested |
 
@@ -48,9 +50,10 @@ Two things are worth calling out because their *absence is visible* in the code:
 - **No adapter advertises `vision` or `tool_calling`.** Those APIs support both;
   these adapters do not send image parts or tool definitions yet. Claiming the
   capability would make the router pick a provider for work it cannot do.
-- **Model quality scores are heuristics, not benchmarks.** The Models table
-  labels each row `catalog` (a known-family lookup) or `heuristic` (inferred
-  from the model name). Measured scores from real runs are Phase 2.
+- **Reasoning and coding scores are still heuristics**, inferred from the model
+  name and labelled `catalog` or `heuristic` in the Models table. **Speed is no
+  longer a guess**: once a model has enough successful runs, NYRO ranks it on
+  measured throughput and says so.
 
 ## Quick start
 

@@ -96,6 +96,12 @@ removed. That is what keeps a rule from overriding privacy, a budget, or
 availability. If you ever make a rule a hard filter, "coding goes to Claude"
 becomes a way to leak private code to the cloud.
 
+**13. A measured number must be distinguishable from a guessed one.**
+Speed is measured from real runs once a model has enough of them; reasoning and
+coding are still inferred from the model name. The Models table and the routing
+explanation both say which is which. Never present an estimate as an
+observation.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:
@@ -106,9 +112,9 @@ The spec this was built from is explicit about it, and the code follows:
 - Mark anything not ready as `planned` or `experimental`. Do not ship
   placeholder features to look complete — the navigation has three items, not
   twelve, because only three are built.
-- Model quality scores are heuristics. Every model row carries `traitsSource`
-  (`catalog` / `heuristic` / `user`) so an estimate is never shown as a
-  measurement.
+- Reasoning and coding scores are heuristics; every model row carries
+  `traitsSource` (`catalog` / `heuristic` / `user`). Speed is measured once
+  there is enough evidence, and is marked as measured wherever it appears.
 - The mock and the browser demo label themselves as simulated on every surface.
 
 ## Conventions

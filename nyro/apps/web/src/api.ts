@@ -112,6 +112,22 @@ export interface RoutingRule {
   preferProviderId: string | null;
 }
 
+export interface ModelPerformance {
+  modelId: string;
+  medianTokensPerSecond: number;
+  successRate: number;
+  samples: number;
+  /** null until there is enough evidence for NYRO to act on it. */
+  measuredSpeedScore: number | null;
+  inUse: boolean;
+}
+
+export interface PerformanceState {
+  enabled: boolean;
+  minSamples: number;
+  models: ModelPerformance[];
+}
+
 export interface ApiError {
   code: string;
   message: string;
@@ -194,6 +210,9 @@ export const api = {
   routingRules: () => request<{ rules: RoutingRule[] }>("/api/routing-rules"),
   setRoutingRules: (rules: RoutingRule[]) =>
     request<{ rules: RoutingRule[] }>("/api/routing-rules", { method: "PUT", body: JSON.stringify({ rules }) }),
+  performance: () => request<PerformanceState>("/api/performance"),
+  setMeasuredRouting: (enabled: boolean) =>
+    request<{ enabled: boolean }>("/api/performance", { method: "PUT", body: JSON.stringify({ enabled }) }),
   stats: () =>
     request<{
       totalRuns: number; failedRuns: number; cancelledRuns: number; totalCostUsd: number; avgLatencyMs: number;
