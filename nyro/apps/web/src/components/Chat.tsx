@@ -1,0 +1,268 @@
+/**
+ * Chat view (spec §58, §59, §60).
+ *
+ * Shows the routing decision before the first token arrives, streams the
+ * answer, surfaces a fallback honestly when one happens, and has a Stop button
+ * that actually cancels the upstream model call.
+ *
+ * What it deliberately does NOT show: any hidden reasoning. The "reasons" here
+ * are the router's own short operational notes (spec §81).
+ */
+import { useEffect, useRef, useState } from "react";
+import { api, streamChat, type ApiError, type Decision, type Model } from "../api.ts";
+import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
+
+type Turn =
+  | { kind: "user"; text: string }
+  | {
+      kind: "assistant";
+      text: string;
+      decision: Decision | null;
+      attempts: Array<{ modelId: string; isFallback: boolean }>;
+      usage: { inputTokens: number; outputTokens: number; costUsd: number } | null;
+      latencyMs: number | null;
+      error: ApiError | null;
+      streaming: boolean;
+    };
+
+const MODES = ["auto", "cheapest", "fastest", "best", "local_only", "cloud_only"] as const;
+
+export function Chat({ models, onActivity }: { models: Model[]; onActivity: () => void }) {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [input, setInput] = useState("");
+  const [mode, setMode] = useState<string>("auto");
+  const [pinnedModel, setPinnedModel] = useState<string>("");
+  const [privacy, setPrivacy] = useState<string>("normal");
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [turns]);
+
+  // Leaving the page mid-stream must cancel the server-side model call too.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  function patchLast(fn: (t: Extract<Turn, { kind: "assistant" }>) => void): void {
+    setTurns((prev) => {
+      const next = [...prev];
+      const last = next.at(-1);
+      if (last?.kind === "assistant") {
+        const copy = { ...last };
+        fn(copy);
+        next[next.length - 1] = copy;
+      }
+      return next;
+    });
+  }
+
+  async function send(): Promise<void> {
+    const message = input.trim();
+    if (message.length === 0 || busy) return;
+
+    setInput("");
+    setBusy(true);
+    setTurns((prev) => [
+      ...prev,
+      { kind: "user", text: message },
+      { kind: "assistant", text: "", decision: null, attempts: [], usage: null, latencyMs: null, error: null, streaming: true },
+    ]);
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    await streamChat(
+      {
+        message,
+        conversationId,
+        mode,
+        privacy,
+        modelId: pinnedModel === "" ? null : pinnedModel,
+      },
+      {
+        onRouting: (d) => patchLast((t) => { t.decision = d; }),
+        onAttempt: (a) => patchLast((t) => { t.attempts = [...t.attempts, a]; }),
+        onDelta: (text) => patchLast((t) => { t.text += text; }),
+        onUsage: (u) => patchLast((t) => { t.usage = u; }),
+        onDone: (d) => {
+          setConversationId(d.conversationId);
+          patchLast((t) => { t.latencyMs = d.latencyMs; t.streaming = false; });
+        },
+        onError: (e) => patchLast((t) => { t.error = e; t.streaming = false; }),
+      },
+      ac.signal,
+    );
+
+    patchLast((t) => { t.streaming = false; });
+    setBusy(false);
+    abortRef.current = null;
+    onActivity();
+  }
+
+  function stop(): void {
+    abortRef.current?.abort();
+    setBusy(false);
+    patchLast((t) => { t.streaming = false; });
+  }
+
+  const enabledModels = models.filter((m) => m.enabled);
+
+  return (
+    <div className="flex h-full flex-col gap-4">
+      <Panel title="Request">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-dim">Routing mode</span>
+            <select className={inputClass} value={mode} onChange={(e) => setMode(e.target.value)}>
+              {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-dim">Privacy</span>
+            <select className={inputClass} value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
+              <option value="normal">normal</option>
+              <option value="sensitive">sensitive (local only)</option>
+              <option value="local_only">local_only</option>
+              <option value="public">public</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-dim">Pin a model (optional)</span>
+            <select className={inputClass} value={pinnedModel} onChange={(e) => setPinnedModel(e.target.value)}>
+              <option value="">let NYRO choose</option>
+              {enabledModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.displayName} {m.local ? "(local)" : ""}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {privacy !== "normal" && privacy !== "public" ? (
+          <p className="mt-3 text-[11px] text-live">
+            Privacy is enforced in the router: cloud models are excluded entirely, including from the fallback chain.
+            If no local model is available the request fails rather than escalating.
+          </p>
+        ) : null}
+      </Panel>
+
+      <div className="flex-1 space-y-3 overflow-y-auto">
+        {turns.length === 0 ? (
+          <Panel title="Conversation">
+            <Empty>
+              {enabledModels.length === 0
+                ? "No models are enabled yet. Add a provider on the Models page, then run discovery."
+                : "Send a message. NYRO will pick a model and show you why."}
+            </Empty>
+          </Panel>
+        ) : null}
+
+        {turns.map((turn, i) =>
+          turn.kind === "user" ? (
+            <div key={i} className="ml-auto max-w-[85%] rounded border border-line bg-sunk px-4 py-2.5 text-sm text-ink">
+              {turn.text}
+            </div>
+          ) : (
+            <AssistantTurn key={i} turn={turn} />
+          ),
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="rounded border border-line bg-panel p-3">
+        <textarea
+          className={`${inputClass} min-h-[76px] resize-y text-sm`}
+          placeholder="Message NYRO…  (Enter to send, Shift+Enter for a newline)"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); }
+          }}
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-[11px] text-dim">
+            {enabledModels.length} model{enabledModels.length === 1 ? "" : "s"} available
+            {conversationId ? " · conversation saved" : ""}
+          </span>
+          <div className="flex gap-2">
+            {busy ? <Button variant="danger" onClick={stop}>Stop</Button> : null}
+            <Button variant="primary" onClick={() => void send()} disabled={busy || input.trim().length === 0}>
+              {busy ? "Working…" : "Send"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> }) {
+  const chosen = turn.decision?.chosen;
+  const usedFallback = turn.attempts.some((a) => a.isFallback);
+  const actualModel = turn.attempts.at(-1)?.modelId ?? chosen?.modelId ?? null;
+
+  return (
+    <div className="rounded border border-line bg-panel">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+        <Dot state={turn.error ? "unreachable" : turn.streaming ? "degraded" : "healthy"} />
+        {chosen ? (
+          <>
+            <span className="text-xs text-ink">{actualModel === chosen.modelId ? chosen.displayName : actualModel}</span>
+            {chosen.local ? <Badge tone="live">local</Badge> : <Badge>{chosen.providerId}</Badge>}
+            <Badge tone="accent">{turn.decision?.mode}</Badge>
+          </>
+        ) : (
+          <span className="text-xs text-dim">{turn.streaming ? "Routing…" : "No model selected"}</span>
+        )}
+        {turn.latencyMs !== null ? <span className="text-[11px] text-dim">{turn.latencyMs} ms</span> : null}
+        {turn.usage ? (
+          <span className="text-[11px] text-dim">
+            {turn.usage.inputTokens}→{turn.usage.outputTokens} tok · {formatCost(turn.usage.costUsd)}
+          </span>
+        ) : null}
+      </div>
+
+      {usedFallback ? (
+        <p className="border-b border-line px-4 py-2 text-[11px] text-wait">
+          The first model failed. NYRO fell back to {actualModel}. Attempts:{" "}
+          {turn.attempts.map((a) => a.modelId).join(" → ")}
+        </p>
+      ) : null}
+
+      {chosen && chosen.reasons.length > 0 ? (
+        <p className="border-b border-line px-4 py-2 text-[11px] text-dim">Chosen because: {chosen.reasons.join(" · ")}</p>
+      ) : null}
+
+      <div className="px-4 py-3">
+        {turn.error ? (
+          <div className="rounded border border-stop/40 bg-stop/5 p-3">
+            <p className="text-xs text-stop">{turn.error.message}</p>
+            <p className="mt-1 text-[11px] text-dim">
+              code: {turn.error.code} · component: {turn.error.component}
+              {turn.error.retryable ? " · retryable" : ""}
+            </p>
+            {turn.decision && turn.decision.rejected.length > 0 ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[11px] text-dim">
+                  Why no model was used ({turn.decision.rejected.length})
+                </summary>
+                <ul className="mt-1 space-y-0.5">
+                  {turn.decision.rejected.map((r) => (
+                    <li key={r.modelId} className="text-[11px] text-dim">{r.modelId}: {r.reason}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          <p className="stream-text text-sm text-ink">
+            {turn.text}
+            {turn.streaming ? <span className="ml-0.5 animate-pulse text-accent">▍</span> : null}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export { api };

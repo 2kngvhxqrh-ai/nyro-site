@@ -1,0 +1,29 @@
+# Postgres only.
+#
+# NYRO's API and web app run directly on the host during development — putting
+# them in containers now would add a rebuild step to every edit without solving
+# a problem anyone has yet (spec §116). Containerising them belongs with
+# deployment, not with Phase 1.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nyro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nyro
+      POSTGRES_PASSWORD: nyro
+      POSTGRES_DB: nyro
+    ports:
+      # 5433 on the host, so an existing local Postgres on 5432 is untouched.
+      - "5433:5432"
+    volumes:
+      - nyro-pgdata:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nyro -d nyro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  nyro-pgdata:

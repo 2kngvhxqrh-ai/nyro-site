@@ -1,0 +1,137 @@
+# Setup
+
+## Requirements
+
+- Node.js 22 or newer (uses the built-in test runner and native TypeScript stripping)
+- pnpm 9 or newer
+- Docker, for Postgres (or an existing Postgres 14+)
+
+## 1. Database
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Postgres listens on **5433** so it does not collide with an existing local
+instance on 5432. It also creates `nyro_test` for the test suite.
+
+Using your own Postgres instead? Create two databases and point `DATABASE_URL`
+and `TEST_DATABASE_URL` at them. No extensions are required.
+
+## 2. Configuration
+
+```bash
+cp .env.example .env
+openssl rand -base64 32        # paste the output into NYRO_SECRET_KEY
+```
+
+`NYRO_SECRET_KEY` encrypts provider API keys at rest. **Back it up.** If it is
+lost or changed, stored keys cannot be decrypted and must be re-entered — NYRO
+will tell you so rather than failing silently.
+
+On Windows without `openssl`:
+
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
+```
+
+## 3. Install and migrate
+
+```bash
+pnpm install
+pnpm migrate
+```
+
+Migrations are idempotent; re-running prints `Database already up to date.`
+
+## 4. Run
+
+```bash
+pnpm dev
+```
+
+- API: http://127.0.0.1:8787
+- Web: http://localhost:5173
+
+The web dev server proxies `/api` to the API, so the browser makes same-origin
+requests.
+
+## 5. Connect a provider
+
+### Ollama (local)
+
+Set `OLLAMA_BASE_URL` in `.env` and restart, or add it in the UI under
+**Models → + Add provider**.
+
+Which URL depends on where each part runs:
+
+| NYRO runs | Ollama runs | URL |
+|---|---|---|
+| On the host | On the host | `http://localhost:11434` |
+| In Docker | On the host | `http://host.docker.internal:11434` |
+| On the host | In Docker (port published) | `http://localhost:11434` |
+
+Then press **Discover**. Every model you have pulled appears in the registry.
+
+Ollama must be reachable and have at least one model pulled:
+
+```bash
+ollama pull llama3.2:1b
+curl http://localhost:11434/api/tags     # should list it
+```
+
+### A cloud provider
+
+**Models → + Add provider**, pick one, paste the key, save. The key is
+encrypted before it is stored and is never sent back to the browser — you will
+only ever see the last four characters again.
+
+Presets ship for OpenAI, Anthropic, Google Gemini, Groq, Mistral, OpenRouter
+and xAI, plus **Custom (OpenAI-compatible)** for vLLM, LM Studio, llama.cpp, a
+proxy, or anything else speaking that protocol.
+
+## 6. Verify it works
+
+```bash
+curl http://127.0.0.1:8787/api/health | jq
+curl -N -X POST http://127.0.0.1:8787/api/chat/stream \
+  -H 'content-type: application/json' \
+  -d '{"message":"What is 25 x 17?","mode":"auto"}'
+```
+
+You should see a `routing` event naming the chosen model, then `delta` events,
+then `usage` and `done`.
+
+## Tests
+
+```bash
+pnpm test          # requires TEST_DATABASE_URL
+pnpm typecheck
+pnpm build
+```
+
+**What the tests do and do not prove.** They run against a real Postgres, a
+real HTTP listener and real sockets. The upstream model servers are local
+servers speaking each vendor's genuine wire protocol — which proves request
+shaping, stream framing, usage parsing, error mapping and cancellation, but
+does **not** prove that OpenAI or Anthropic behave as documented. Only a live
+API key does that. Use **Test connection** in the Models UI for that check.
+
+## Troubleshooting
+
+**`NYRO_SECRET_KEY is not set`** — step 2. It is required; NYRO will not start
+without it rather than storing keys unencrypted.
+
+**Provider shows `unreachable`** — the base URL is wrong or the service is
+down. The Health page prints the exact origin it tried. From Docker,
+`localhost` means the container, not your machine — use `host.docker.internal`.
+
+**`no_eligible_model`** — the router excluded everything. The error response
+lists each model and the rule that excluded it. Common causes: privacy set to
+local-only with no local provider, every model disabled, or a prompt larger
+than any configured model's context window.
+
+**Ollama reachable but no models** — nothing is pulled. `ollama pull llama3.2:1b`.
+
+**Port already in use** — change `NYRO_PORT`, or the `5433:5432` mapping in
+`docker/docker-compose.yml`.

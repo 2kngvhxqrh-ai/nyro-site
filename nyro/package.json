@@ -1,0 +1,17 @@
+{
+  "name": "nyro",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NYRO - personal AI operating system. Phase 1 foundation.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter \"./apps/*\" build",
+    "typecheck": "pnpm --filter \"./apps/*\" typecheck",
+    "test": "pnpm --filter @nyro/api test",
+    "migrate": "pnpm --filter @nyro/api migrate"
+  }
+}
