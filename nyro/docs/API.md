@@ -85,7 +85,29 @@ and removes models the provider no longer reports.
 `user` — so a guessed score is never mistaken for a measured one.
 
 ### `PUT /api/models/:id`
-`{ "enabled": boolean }`
+A patch; every field optional, and an omitted field is left alone.
+
+```json
+{
+  "enabled": true,
+  "displayName": "GPT-4o mini",
+  "contextWindow": 128000,
+  "maxOutputTokens": 16384,
+  "inputCostPer1m": 0.15,
+  "outputCostPer1m": 0.6
+}
+```
+
+Supplying any **trait** marks the model `traitsSource: "user"`, after which
+discovery leaves those fields alone. Toggling `enabled` does **not** — otherwise
+switching a model off once would freeze its traits forever.
+
+Correcting a price is not cosmetic: the catalog carries list prices that drift,
+and a wrong one produces wrong cost estimates and wrong budget enforcement.
+
+### `POST /api/models/:id/reset`
+Discards the user's overrides and re-derives from the catalog immediately,
+rather than waiting for the next discovery run.
 
 ## Routing
 

@@ -34,7 +34,7 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-211 automated tests, run repeatedly with no flakes.
+220 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
@@ -133,8 +133,10 @@ In dependency order:
 3. **Native Gemini adapter**, proving a third wire format.
 4. ~~**Budget enforcement** (§66)~~ — **done.** Daily, weekly, monthly,
    per-request and per-provider caps, enforced before a model is called.
-5. **Model editing in the UI** — the registry supports `traits_source = 'user'`
-   and discovery already preserves it; there is no UI for it yet.
+5. ~~**Model editing in the UI**~~ — **done.** Prices and context windows are
+   correctable, and the preservation logic in `upsertDiscovered` is finally
+   reachable: nothing could previously set `traits_source = 'user'`, so those
+   branches were dead code.
 
 Authentication should come before anything that makes NYRO reachable beyond
 localhost.

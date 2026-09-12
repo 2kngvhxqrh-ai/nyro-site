@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (211 tests) and was
+Everything in this list is covered by the test suite (220 tests) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -30,6 +30,7 @@ verified running against a real Postgres and a real browser.
 | Conversation persistence, with history you can browse, resume, rename and delete | working, tested |
 | Export everything you own to JSON or readable Markdown, with no API keys | working, tested |
 | Full-text search across every conversation, with highlighted snippets | working, tested |
+| Correct a model's price or context window; discovery will not overwrite it | working, tested |
 | Health checks per component; per-model run/latency/cost stats | working |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |
 | Task-specific routing rules ("coding goes to Claude") | working, tested |
@@ -55,7 +56,8 @@ Two things are worth calling out because their *absence is visible* in the code:
 - **Reasoning and coding scores are still heuristics**, inferred from the model
   name and labelled `catalog` or `heuristic` in the Models table. **Speed is no
   longer a guess**: once a model has enough successful runs, NYRO ranks it on
-  measured throughput and says so.
+  measured throughput and says so. Prices and context windows can be corrected
+  by hand, and a corrected model is labelled `user` and left alone by discovery.
 
 ## Quick start
 

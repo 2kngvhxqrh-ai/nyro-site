@@ -22,6 +22,7 @@ import { budgetConfigSchema, evaluateBudget, DEFAULT_BUDGET } from "../core/budg
 import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import type { Pool } from "../db/pool.ts";
 import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
+import { traitsFor } from "../providers/model-traits.ts";
 import { logger } from "../util/logger.ts";
 import { HttpRouter, readJsonBody, sendJson, type RequestContext } from "./router.ts";
 import { SseStream } from "./sse.ts";
@@ -177,10 +178,47 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
   });
 
   r.put("/api/models/:id", async (ctx) => {
+    const id = ctx.params["id"]!;
     const body = parseOr400(updateModelSchema, await readJsonBody(ctx.req));
-    const ok = await deps.models.setEnabled(ctx.params["id"]!, body.enabled);
-    if (!ok) throw new NyroError("model_not_found", `Model "${ctx.params["id"]}" does not exist.`, { component: "http" });
-    sendJson(ctx.res, 200, { model: await deps.models.get(ctx.params["id"]!) });
+    if (!(await deps.models.get(id))) {
+      throw new NyroError("model_not_found", `Model "${id}" does not exist.`, { component: "http" });
+    }
+
+    if (body.enabled !== undefined) await deps.models.setEnabled(id, body.enabled);
+
+    // Only the trait fields mark the row as user-edited; toggling `enabled`
+    // must not, or discovery would stop updating a model you merely switched off.
+    const { enabled: _enabled, ...traits } = body;
+    if (Object.keys(traits).length > 0) await deps.models.updateTraits(id, traits);
+
+    sendJson(ctx.res, 200, { model: await deps.models.get(id) });
+  });
+
+  /** Discards a user's trait overrides so discovery restores the catalog values. */
+  r.post("/api/models/:id/reset", async (ctx) => {
+    const id = ctx.params["id"]!;
+    const model = await deps.models.get(id);
+    if (!model) throw new NyroError("model_not_found", `Model "${id}" does not exist.`, { component: "http" });
+
+    await deps.models.clearTraitsOverride(id);
+    // Re-derive immediately rather than waiting for the next discovery run, so
+    // "reset" visibly does something.
+    const traits = traitsFor(model.modelIdentifier, model.local, model.contextWindow);
+    await deps.models.upsertDiscovered({
+      id: model.id,
+      providerId: model.providerId,
+      modelIdentifier: model.modelIdentifier,
+      displayName: traits.displayName,
+      contextWindow: traits.contextWindow,
+      maxOutputTokens: traits.maxOutputTokens,
+      inputCostPer1m: traits.inputCostPer1m,
+      outputCostPer1m: traits.outputCostPer1m,
+      capabilities: traits.capabilities,
+      scores: traits.scores,
+      local: model.local,
+      traitsSource: traits.source,
+    });
+    sendJson(ctx.res, 200, { model: await deps.models.get(id) });
   });
 
   /**

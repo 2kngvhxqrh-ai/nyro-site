@@ -275,8 +275,19 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
 
   if (path.startsWith("/api/models/") && method === "PUT") {
     const id = decodeURIComponent(path.slice("/api/models/".length));
-    const enabled = Boolean(body["enabled"]);
-    models = models.map((m) => (m.id === id ? { ...m, enabled } : m));
+    // Mirrors the real API: a patch, so an omitted field is left alone.
+    models = models.map((m) =>
+      m.id === id
+        ? {
+            ...m,
+            ...(body["enabled"] !== undefined ? { enabled: Boolean(body["enabled"]) } : {}),
+            ...(body["displayName"] !== undefined ? { displayName: String(body["displayName"]) } : {}),
+            ...(body["inputCostPer1m"] !== undefined ? { inputCostPer1m: Number(body["inputCostPer1m"]) } : {}),
+            ...(body["outputCostPer1m"] !== undefined ? { outputCostPer1m: Number(body["outputCostPer1m"]) } : {}),
+            ...(body["contextWindow"] !== undefined ? { contextWindow: Number(body["contextWindow"]) } : {}),
+          }
+        : m,
+    );
     const found = models.find((m) => m.id === id);
     if (!found) return errorResponse(404, "model_not_found", `Model "${id}" does not exist.`);
     return jsonResponse(200, { model: { ...found, traitsSource: "catalog" } });
@@ -312,6 +323,10 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
 
   if (path === "/api/budget" && (method === "PUT" || method === "DELETE")) {
     return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
+  }
+
+  if (path.startsWith("/api/models/") && path.endsWith("/reset")) {
+    return errorResponse(409, "config_error", "Correcting a model needs the real NYRO API.");
   }
 
   if (path === "/api/search") {

@@ -215,6 +215,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+  updateModel: (id: string, patch: Partial<Pick<Model, "displayName" | "contextWindow" | "inputCostPer1m" | "outputCostPer1m">>) =>
+    request<{ model: Model }>(`/api/models/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
+  resetModel: (id: string) =>
+    request<{ model: Model }>(`/api/models/${encodeURIComponent(id)}/reset`, { method: "POST" }),
   previewRoute: (body: Record<string, unknown>) =>
     request<{ estimatedInputTokens: number; decision: Decision }>("/api/route/preview", {
       method: "POST",

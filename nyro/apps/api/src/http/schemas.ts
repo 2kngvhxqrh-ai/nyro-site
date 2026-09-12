@@ -45,8 +45,29 @@ export const upsertProviderSchema = z.object({
   extra: z.record(z.string()).default({}),
 });
 
+/**
+ * Every field is optional: this is a patch, and omitting a field must leave it
+ * alone rather than reset it. Supplying any trait marks the model as
+ * user-edited so discovery stops overwriting it.
+ */
 export const updateModelSchema = z.object({
-  enabled: z.boolean(),
+  enabled: z.boolean().optional(),
+  displayName: z.string().min(1).max(200).optional(),
+  contextWindow: z.number().int().min(256).max(20_000_000).optional(),
+  maxOutputTokens: z.number().int().min(16).max(1_000_000).optional(),
+  // Costs are per 1M tokens. Zero is legitimate (local models are free).
+  inputCostPer1m: z.number().min(0).max(100_000).optional(),
+  outputCostPer1m: z.number().min(0).max(100_000).optional(),
+  capabilities: z.array(z.enum(CAPABILITIES)).optional(),
+  scores: z
+    .object({
+      speed: z.number().min(0).max(10),
+      reasoning: z.number().min(0).max(10),
+      coding: z.number().min(0).max(10),
+      vision: z.number().min(0).max(10),
+      tool_calling: z.number().min(0).max(10),
+    })
+    .optional(),
 });
 
 export const createConversationSchema = z.object({

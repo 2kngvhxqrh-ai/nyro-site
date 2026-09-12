@@ -330,6 +330,11 @@ export class ModelRepo {
            capabilities       = case when models.traits_source = 'user' then models.capabilities       else excluded.capabilities end,
            scores             = case when models.traits_source = 'user' then models.scores             else excluded.scores end,
            local              = excluded.local,
+           -- A user's override is never downgraded; otherwise discovery would
+           -- forget that the values are theirs. For every other row the source
+           -- must follow the values, or a reset that restores catalog numbers
+           -- leaves the row still claiming to be a heuristic.
+           traits_source      = case when models.traits_source = 'user' then 'user' else excluded.traits_source end,
            last_seen_at       = now()`,
         [
           input.id,
@@ -348,6 +353,67 @@ export class ModelRepo {
       );
     } catch (err) {
       throw dbError(err, "saving discovered model");
+    }
+  }
+
+  /**
+   * Applies a user's correction to a model's traits.
+   *
+   * Marks the row `traits_source = 'user'`, which is what stops the next
+   * discovery run from overwriting it. Until this existed, that preservation
+   * logic in upsertDiscovered was unreachable: nothing could set the value.
+   *
+   * This matters for correctness, not just taste. The catalog carries list
+   * prices that drift, and a wrong price produces wrong cost estimates and
+   * wrong budget enforcement — with no way for the user to fix either.
+   */
+  async updateTraits(id: string, patch: {
+    displayName?: string;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    inputCostPer1m?: number;
+    outputCostPer1m?: number;
+    capabilities?: Capability[];
+    scores?: ModelScores;
+  }): Promise<boolean> {
+    const sets: string[] = [];
+    const values: unknown[] = [id];
+    const push = (col: string, value: unknown): void => {
+      values.push(value);
+      sets.push(`${col} = $${values.length}`);
+    };
+
+    if (patch.displayName !== undefined) push("display_name", patch.displayName);
+    if (patch.contextWindow !== undefined) push("context_window", patch.contextWindow);
+    if (patch.maxOutputTokens !== undefined) push("max_output_tokens", patch.maxOutputTokens);
+    if (patch.inputCostPer1m !== undefined) push("input_cost_per_1m", patch.inputCostPer1m);
+    if (patch.outputCostPer1m !== undefined) push("output_cost_per_1m", patch.outputCostPer1m);
+    if (patch.capabilities !== undefined) push("capabilities", JSON.stringify(patch.capabilities));
+    if (patch.scores !== undefined) push("scores", JSON.stringify(patch.scores));
+
+    if (sets.length === 0) return true; // nothing to change is not a failure
+
+    // Column names come from this function, never from input; every value is a
+    // placeholder.
+    sets.push("traits_source = 'user'");
+    try {
+      const res = await this.pool.query(`update models set ${sets.join(", ")} where id = $1`, values);
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      throw dbError(err, "updating model traits");
+    }
+  }
+
+  /** Drops a user override so the next discovery restores the catalog values. */
+  async clearTraitsOverride(id: string): Promise<boolean> {
+    try {
+      const res = await this.pool.query(
+        "update models set traits_source = 'heuristic' where id = $1 and traits_source = 'user'",
+        [id],
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      throw dbError(err, "clearing model override");
     }
   }
 

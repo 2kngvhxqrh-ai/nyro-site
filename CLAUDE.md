@@ -105,7 +105,13 @@ conversation removes its messages but NOT its `model_runs`
 (`on delete set null`), so removing a chat never rewrites what you have spent
 or what NYRO measured. Tested.
 
-**14. A measured number must be distinguishable from a guessed one.**
+**14. `traitsSource` must always describe where the values actually came from.**
+`catalog` means a known-model lookup, `heuristic` means inferred from the name,
+`user` means corrected by hand. `upsertDiscovered` maintains it — never
+downgrading a user's override, and otherwise following the values — because a
+row that reports catalog numbers as a guess is lying about its own provenance.
+
+**15. A measured number must be distinguishable from a guessed one.**
 Speed is measured from real runs once a model has enough of them; reasoning and
 coding are still inferred from the model name. The Models table and the routing
 explanation both say which is which. Never present an estimate as an

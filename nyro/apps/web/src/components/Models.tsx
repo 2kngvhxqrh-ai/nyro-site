@@ -16,6 +16,7 @@ export function Models({
 }) {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [perf, setPerf] = useState<Map<string, ModelPerformance>>(new Map());
+  const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -192,14 +193,19 @@ export function Models({
                     <td className="py-2 pr-3 text-dim">{m.scores.reasoning}</td>
                     <td className="py-2 pr-3 text-dim">{m.scores.coding}</td>
                     <td className="py-2 pr-3">
-                      {/* Honesty: say whether a score is a table lookup or a guess. */}
-                      <span className="text-[10px] text-dim" title={
-                        m.traitsSource === "catalog" ? "From NYRO's known-model table (list prices, not measured)"
-                        : m.traitsSource === "user" ? "Edited by you"
-                        : "Estimated from the model name — not measured"
-                      }>
+                      {/* Honesty: say whether a value is a table lookup, a guess, or yours. */}
+                      <button
+                        type="button"
+                        onClick={() => setEditing(editing === m.id ? null : m.id)}
+                        title={
+                          m.traitsSource === "catalog" ? "From NYRO's known-model table (list prices, not measured) — click to correct"
+                          : m.traitsSource === "user" ? "Corrected by you; discovery will not overwrite it"
+                          : "Estimated from the model name — click to correct"
+                        }
+                        className={`text-[10px] underline-offset-2 hover:underline ${m.traitsSource === "user" ? "text-accent" : "text-dim"}`}
+                      >
                         {m.traitsSource}
-                      </span>
+                      </button>
                     </td>
                     <td className="py-2">
                       <input
@@ -211,9 +217,28 @@ export function Models({
                     </td>
                   </tr>
                 ))}
+                {models.map((m) =>
+                  editing === m.id ? (
+                    <tr key={`${m.id}-edit`}>
+                      <td colSpan={9} className="pb-3">
+                        <ModelEditor
+                          model={m}
+                          onClose={() => setEditing(null)}
+                          onSaved={async () => { setEditing(null); await refresh(); }}
+                        />
+                      </td>
+                    </tr>
+                  ) : null,
+                )}
               </tbody>
             </table>
             <p className="prose-sans mt-3 text-[11.5px] leading-relaxed text-dim">
+              The <span className="text-ink">source</span> column is a button: if a price or context window is
+              wrong, correct it. Prices here are list prices and they drift — a wrong one produces wrong cost
+              estimates and wrong budget enforcement. A corrected model is marked{" "}
+              <span className="text-accent">user</span> and discovery will not overwrite it.
+            </p>
+            <p className="prose-sans mt-2 text-[11.5px] leading-relaxed text-dim">
               Reasoning and coding scores are heuristics from the model's name, not benchmarks. Speed is
               different: a <span className="text-live">green</span> figure is measured from real runs
               (median output tokens per second) and is what the router actually uses. A grey figure with
@@ -223,6 +248,101 @@ export function Models({
           </div>
         )}
       </Panel>
+    </div>
+  );
+}
+
+/**
+ * Correcting a model's traits.
+ *
+ * Only the fields whose wrongness has consequences: the costs (which drive
+ * estimates and budget enforcement) and the context window (which decides
+ * whether a model is eligible at all). Capability and score editing would be
+ * more surface without more benefit — speed is measured now, and the rest is
+ * better fixed in the catalog for everyone.
+ */
+function ModelEditor({
+  model,
+  onClose,
+  onSaved,
+}: {
+  model: Model;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [displayName, setDisplayName] = useState(model.displayName);
+  const [inputCost, setInputCost] = useState(String(model.inputCostPer1m));
+  const [outputCost, setOutputCost] = useState(String(model.outputCostPer1m));
+  const [contextWindow, setContextWindow] = useState(String(model.contextWindow));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function num(v: string): number | null {
+    const n = Number.parseFloat(v.trim());
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
+  async function save(): Promise<void> {
+    const patch: Record<string, unknown> = {};
+    if (displayName.trim() && displayName !== model.displayName) patch["displayName"] = displayName.trim();
+    const ic = num(inputCost); if (ic !== null && ic !== model.inputCostPer1m) patch["inputCostPer1m"] = ic;
+    const oc = num(outputCost); if (oc !== null && oc !== model.outputCostPer1m) patch["outputCostPer1m"] = oc;
+    const cw = num(contextWindow); if (cw !== null && cw !== model.contextWindow) patch["contextWindow"] = Math.round(cw);
+
+    if (Object.keys(patch).length === 0) { onClose(); return; }
+
+    setBusy(true); setErr(null);
+    try {
+      await api.updateModel(model.id, patch as never);
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof NyroApiError ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reset(): Promise<void> {
+    setBusy(true); setErr(null);
+    try {
+      await api.resetModel(model.id);
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof NyroApiError ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded border border-accent/30 bg-sunk p-3">
+      {err ? <p className="mb-2 text-[11px] text-stop">{err}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Field label="Display name">
+          <input className={inputClass} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </Field>
+        <Field label="Input $ / 1M">
+          <input className={inputClass} inputMode="decimal" value={inputCost} onChange={(e) => setInputCost(e.target.value)} />
+        </Field>
+        <Field label="Output $ / 1M">
+          <input className={inputClass} inputMode="decimal" value={outputCost} onChange={(e) => setOutputCost(e.target.value)} />
+        </Field>
+        <Field label="Context window">
+          <input className={inputClass} inputMode="numeric" value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} />
+        </Field>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button variant="primary" onClick={() => void save()} disabled={busy}>
+          {busy ? "Saving…" : "Save correction"}
+        </Button>
+        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        {model.traitsSource === "user" ? (
+          <Button onClick={() => void reset()} disabled={busy}>Reset to catalog</Button>
+        ) : null}
+        <span className="prose-sans text-[11px] text-dim">
+          Saving marks this model as yours; discovery will stop overwriting these fields.
+        </span>
+      </div>
     </div>
   );
 }

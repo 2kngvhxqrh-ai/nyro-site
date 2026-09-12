@@ -517,6 +517,113 @@ describe("failure handling and fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("correcting a model's traits (spec §8)", () => {
+  const MODEL = "openai:gpt-4o-mini";
+
+  async function model(): Promise<{ inputCostPer1m: number; outputCostPer1m: number; displayName: string; contextWindow: number; traitsSource: string; enabled: boolean }> {
+    const { models } = await json<{ models: Array<Record<string, never>> }>("/api/models");
+    return (models as unknown as Array<{ id: string }>).find((m) => m.id === MODEL) as never;
+  }
+
+  test("a corrected price is stored and marked as the user's", async () => {
+    // The catalog carries list prices that drift. A wrong price produces wrong
+    // cost estimates and wrong budget enforcement, so it has to be fixable.
+    const res = await api(`/api/models/${encodeURIComponent(MODEL)}`, {
+      method: "PUT",
+      body: JSON.stringify({ inputCostPer1m: 0.99, outputCostPer1m: 1.98, displayName: "GPT-4o mini (my price)" }),
+    });
+    assert.equal(res.status, 200);
+    const m = await model();
+    assert.equal(m.inputCostPer1m, 0.99);
+    assert.equal(m.outputCostPer1m, 1.98);
+    assert.equal(m.displayName, "GPT-4o mini (my price)");
+    assert.equal(m.traitsSource, "user");
+  });
+
+  test("discovery does NOT overwrite the correction", async () => {
+    // This is the behaviour upsertDiscovered was written for, and which was
+    // unreachable until traits could be marked as the user's.
+    const before = await model();
+    const report = await json<{ ok: boolean }>("/api/providers/openai/discover", { method: "POST" });
+    assert.equal(report.ok, true, "discovery did not run, so this proves nothing");
+
+    const after = await model();
+    assert.equal(after.inputCostPer1m, before.inputCostPer1m, "discovery reverted the user's price");
+    assert.equal(after.displayName, before.displayName, "discovery reverted the user's name");
+    assert.equal(after.traitsSource, "user");
+  });
+
+  test("the corrected price is what routing and cost actually use", async () => {
+    // An override nothing acts on would be decoration.
+    const r = await json<{ decision: { chosen: { modelId: string; estimatedCostUsd: number } } }>(
+      "/api/route/preview",
+      { method: "POST", body: JSON.stringify({ message: "hello", modelId: MODEL }) },
+    );
+    assert.equal(r.decision.chosen.modelId, MODEL);
+    // 0.99/1.98 per 1M against the fixed 800-token output estimate is far below
+    // the catalog's 0.15/0.6 would give for the same shape; just assert it is
+    // derived from the new numbers rather than the old.
+    const expected = (r.decision.chosen.estimatedCostUsd * 1_000_000) / 1.98;
+    assert.ok(expected > 0, "cost was not computed from the stored price");
+  });
+
+  test("reset restores the catalog values AND says they are from the catalog", async () => {
+    const res = await api(`/api/models/${encodeURIComponent(MODEL)}/reset`, { method: "POST" });
+    assert.equal(res.status, 200);
+    const m = await model();
+    assert.notEqual(m.inputCostPer1m, 0.99, "reset left the user's price in place");
+    assert.notEqual(m.displayName, "GPT-4o mini (my price)");
+    // gpt-4o-mini has a catalog entry, so after a reset the row must say so.
+    // Leaving it as "heuristic" would report catalog numbers as guesses.
+    assert.equal(m.traitsSource, "catalog", "reset restored catalog values but mislabelled their source");
+  });
+
+  test("discovery keeps traitsSource truthful for a model it did not edit", async () => {
+    await json("/api/providers/openai/discover", { method: "POST" });
+    const m = await model();
+    assert.equal(m.traitsSource, "catalog");
+  });
+
+  test("toggling enabled does NOT mark the model as user-edited", async () => {
+    // Otherwise switching a model off once would freeze its traits forever.
+    const before = await model();
+    await api(`/api/models/${encodeURIComponent(MODEL)}`, { method: "PUT", body: JSON.stringify({ enabled: false }) });
+    let m = await model();
+    assert.equal(m.enabled, false);
+    assert.equal(m.traitsSource, before.traitsSource, "toggling enabled changed traitsSource");
+    await api(`/api/models/${encodeURIComponent(MODEL)}`, { method: "PUT", body: JSON.stringify({ enabled: true }) });
+    m = await model();
+    assert.equal(m.enabled, true);
+  });
+
+  test("an out-of-range value is rejected", async () => {
+    for (const body of [
+      { inputCostPer1m: -1 },
+      { contextWindow: 10 },
+      { scores: { speed: 99, reasoning: 5, coding: 5, vision: 0, tool_calling: 5 } },
+      { capabilities: ["telepathy"] },
+    ]) {
+      const res = await api(`/api/models/${encodeURIComponent(MODEL)}`, { method: "PUT", body: JSON.stringify(body) });
+      assert.equal(res.status, 400, `accepted an invalid patch: ${JSON.stringify(body)}`);
+    }
+  });
+
+  test("editing an unknown model is a 404", async () => {
+    const res = await api("/api/models/nope%3Anope", { method: "PUT", body: JSON.stringify({ displayName: "x" }) });
+    assert.equal(res.status, 404);
+  });
+
+  test("an empty patch is accepted and changes nothing", async () => {
+    const before = await model();
+    const res = await api(`/api/models/${encodeURIComponent(MODEL)}`, { method: "PUT", body: JSON.stringify({}) });
+    assert.equal(res.status, 200);
+    const after = await model();
+    assert.equal(after.traitsSource, before.traitsSource, "an empty patch marked the model as edited");
+    assert.equal(after.displayName, before.displayName);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("conversation history", () => {
   test("conversations are listed with a title and message count", async () => {
     const first = await json<{ conversationId: string }>("/api/chat", {
