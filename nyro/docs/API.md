@@ -147,6 +147,10 @@ event, not an HTTP status.
 
 - `GET /api/conversations`
 - `POST /api/conversations` — `{ "title": "…" }`
+- `PUT /api/conversations/:id` — `{ "title": "…" }`, rename
+- `DELETE /api/conversations/:id` — removes the conversation and its messages.
+  `model_runs` rows survive (`on delete set null`), so deleting a chat never
+  rewrites your spend or the performance measurements derived from it.
 - `GET /api/conversations/:id/messages`
 
 ## Measured performance (spec §13, §102)

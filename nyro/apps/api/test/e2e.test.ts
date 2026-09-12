@@ -517,6 +517,105 @@ describe("failure handling and fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("conversation history", () => {
+  test("conversations are listed with a title and message count", async () => {
+    const first = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "a memorable first question", mode: "local_only" }),
+    });
+    const list = await json<{ conversations: Array<{ id: string; title: string; messageCount: number }> }>(
+      "/api/conversations",
+    );
+    const found = list.conversations.find((c) => c.id === first.conversationId);
+    assert.ok(found, "a conversation that exists was not listed");
+    assert.match(found!.title, /memorable first question/);
+    assert.equal(found!.messageCount, 2);
+  });
+
+  test("a conversation can be renamed", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "rename me", mode: "local_only" }),
+    });
+    const res = await api(`/api/conversations/${c.conversationId}`, {
+      method: "PUT",
+      body: JSON.stringify({ title: "Renamed by the user" }),
+    });
+    assert.equal(res.status, 200);
+    const list = await json<{ conversations: Array<{ id: string; title: string }> }>("/api/conversations");
+    assert.equal(list.conversations.find((x) => x.id === c.conversationId)!.title, "Renamed by the user");
+  });
+
+  test("deleting a conversation removes it and its messages", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "delete me", mode: "local_only" }),
+    });
+    const res = await api(`/api/conversations/${c.conversationId}`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+
+    const list = await json<{ conversations: Array<{ id: string }> }>("/api/conversations");
+    assert.ok(!list.conversations.some((x) => x.id === c.conversationId));
+    const msgs = await api(`/api/conversations/${c.conversationId}/messages`);
+    assert.equal(msgs.status, 404);
+  });
+
+  test("deleting a conversation does NOT erase spend or measurements", async () => {
+    // model_runs.conversation_id is ON DELETE SET NULL on purpose. Removing a
+    // chat must not rewrite what you have spent this month, or what NYRO has
+    // learned about how fast a model is.
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "spend then delete", mode: "local_only" }),
+    });
+    const before = await json<{ totalRuns: number }>("/api/stats");
+
+    await api(`/api/conversations/${c.conversationId}`, { method: "DELETE" });
+
+    const after = await json<{ totalRuns: number }>("/api/stats");
+    assert.equal(after.totalRuns, before.totalRuns, "deleting a conversation destroyed run history");
+  });
+
+  test("deleting a conversation that does not exist is a 404, not a silent success", async () => {
+    const res = await api("/api/conversations/00000000-0000-4000-8000-000000000000", { method: "DELETE" });
+    assert.equal(res.status, 404);
+  });
+
+  test("renaming with an empty title is rejected", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "keep my title", mode: "local_only" }),
+    });
+    const res = await api(`/api/conversations/${c.conversationId}`, {
+      method: "PUT",
+      body: JSON.stringify({ title: "" }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test("resuming a conversation returns its full history in order", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "turn one", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "turn two", mode: "local_only", conversationId: c.conversationId }),
+    });
+    const { messages } = await json<{ messages: Array<{ role: string; content: string; modelId: string | null }> }>(
+      `/api/conversations/${c.conversationId}/messages`,
+    );
+    assert.equal(messages.length, 4);
+    assert.deepEqual(messages.map((m) => m.role), ["user", "assistant", "user", "assistant"]);
+    assert.equal(messages[0]!.content, "turn one");
+    assert.equal(messages[2]!.content, "turn two");
+    // Assistant turns carry the model that produced them, so a resumed
+    // conversation can still say which model answered.
+    assert.ok(messages[1]!.modelId?.startsWith("ollama:"));
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("budget enforcement (spec §66)", () => {
   async function setBudget(config: Record<string, unknown>): Promise<void> {
     const res = await api("/api/budget", { method: "PUT", body: JSON.stringify(config) });

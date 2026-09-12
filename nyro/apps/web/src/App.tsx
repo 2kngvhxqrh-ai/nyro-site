@@ -127,7 +127,12 @@ export function App() {
 
       <main className="min-h-0 flex-1 overflow-y-auto">
         {view === "chat" ? (
-          <Chat models={models} onActivity={() => void refreshHealth(false)} initialTurns={seedTurns} />
+          <Chat
+            models={models}
+            onActivity={() => void refreshHealth(false)}
+            initialTurns={seedTurns}
+            showHistory={!DEMO_MODE}
+          />
         ) : view === "models" ? (
           <Models providers={providers} models={models} refresh={refreshRegistry} />
         ) : view === "settings" ? (

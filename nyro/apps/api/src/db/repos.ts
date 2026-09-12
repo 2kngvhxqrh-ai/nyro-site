@@ -469,6 +469,23 @@ export class ConversationRepo {
     }
   }
 
+  /**
+   * Deletes a conversation and its messages.
+   *
+   * model_runs keeps its rows — conversation_id is ON DELETE SET NULL — so
+   * deleting a conversation never rewrites spend history or the performance
+   * measurements derived from it. Removing a chat should not change what NYRO
+   * knows about how fast a model is, or how much you have spent this month.
+   */
+  async delete(conversationId: string): Promise<boolean> {
+    try {
+      const res = await this.pool.query("delete from conversations where id = $1", [conversationId]);
+      return (res.rowCount ?? 0) > 0;
+    } catch (err) {
+      throw dbError(err, "deleting conversation");
+    }
+  }
+
   async setTitle(conversationId: string, title: string): Promise<void> {
     try {
       await this.pool.query("update conversations set title = $2 where id = $1", [conversationId, title]);

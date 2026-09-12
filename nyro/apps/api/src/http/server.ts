@@ -221,6 +221,22 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     sendJson(ctx.res, 201, { conversationId: id });
   });
 
+  r.put("/api/conversations/:id", async (ctx) => {
+    const id = ctx.params["id"]!;
+    const body = parseOr400(z.object({ title: z.string().min(1).max(200) }), await readJsonBody(ctx.req));
+    if (!(await deps.conversations.exists(id))) {
+      throw new NyroError("model_not_found", "Conversation not found.", { component: "http" });
+    }
+    await deps.conversations.setTitle(id, body.title);
+    sendJson(ctx.res, 200, { id, title: body.title });
+  });
+
+  r.delete("/api/conversations/:id", async (ctx) => {
+    const deleted = await deps.conversations.delete(ctx.params["id"]!);
+    if (!deleted) throw new NyroError("model_not_found", "Conversation not found.", { component: "http" });
+    sendJson(ctx.res, 200, { deleted: true });
+  });
+
   r.get("/api/conversations/:id/messages", async (ctx) => {
     const id = ctx.params["id"]!;
     if (!(await deps.conversations.exists(id))) {

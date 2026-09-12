@@ -128,6 +128,21 @@ export interface PerformanceState {
   models: ModelPerformance[];
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface StoredMessage {
+  id: string;
+  role: string;
+  content: string;
+  modelId: string | null;
+}
+
 export interface ApiError {
   code: string;
   message: string;
@@ -196,13 +211,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
   conversations: () =>
-    request<{ conversations: Array<{ id: string; title: string; updatedAt: string; messageCount: number }> }>(
-      "/api/conversations",
-    ).then((r) => r.conversations),
+    request<{ conversations: Conversation[] }>("/api/conversations").then((r) => r.conversations),
+  renameConversation: (id: string, title: string) =>
+    request<{ id: string; title: string }>(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ title }),
+    }),
+  deleteConversation: (id: string) =>
+    request<{ deleted: boolean }>(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }),
   messages: (id: string) =>
-    request<{ messages: Array<{ id: string; role: string; content: string; modelId: string | null }> }>(
-      `/api/conversations/${encodeURIComponent(id)}/messages`,
-    ).then((r) => r.messages),
+    request<{ messages: StoredMessage[] }>(`/api/conversations/${encodeURIComponent(id)}/messages`)
+      .then((r) => r.messages),
   budget: () => request<BudgetState>("/api/budget"),
   setBudget: (config: BudgetConfig) =>
     request<{ config: BudgetConfig }>("/api/budget", { method: "PUT", body: JSON.stringify(config) }),

@@ -5,8 +5,8 @@ Two separate things live here:
 - **`index.html` + `README.md` at the root** — the public Nyro page, served by
   GitHub Pages. Do not restructure the root or move `index.html`; Pages serves
   it from there.
-- **`nyro/`** — the NYRO system (Phase 1). Self-contained; nothing outside it
-  references it.
+- **`nyro/`** — the NYRO system (Phases 1 and 2). Self-contained; nothing
+  outside it references it.
 
 > The root README says the system lives in a separate private repository.
 > `nyro/` is here because that repo was not available. If it should move, it
@@ -97,7 +97,15 @@ removed. That is what keeps a rule from overriding privacy, a budget, or
 availability. If you ever make a rule a hard filter, "coding goes to Claude"
 becomes a way to leak private code to the cloud.
 
-**13. A measured number must be distinguishable from a guessed one.**
+**13. Anything NYRO stores, the user must be able to see and remove.**
+Conversations were persisted from Phase 1 and unreachable in the UI until
+Phase 2 — a system that quietly keeps your history and never shows it is worse
+than one that does not keep it, because you cannot tell. Deleting a
+conversation removes its messages but NOT its `model_runs`
+(`on delete set null`), so removing a chat never rewrites what you have spent
+or what NYRO measured. Tested.
+
+**14. A measured number must be distinguishable from a guessed one.**
 Speed is measured from real runs once a model has enough of them; reasoning and
 coding are still inferred from the model name. The Models table and the routing
 explanation both say which is which. Never present an estimate as an
@@ -111,8 +119,8 @@ The spec this was built from is explicit about it, and the code follows:
   what was not.
 - Never fabricate a tool result, a source, or a completed action.
 - Mark anything not ready as `planned` or `experimental`. Do not ship
-  placeholder features to look complete — the navigation has three items, not
-  twelve, because only three are built.
+  placeholder features to look complete — the navigation lists only what is
+  built, which is why it has four items and not twelve.
 - Reasoning and coding scores are heuristics; every model row carries
   `traitsSource` (`catalog` / `heuristic` / `user`). Speed is measured once
   there is enough evidence, and is marked as measured wherever it appears.

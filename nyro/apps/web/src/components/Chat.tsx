@@ -8,8 +8,9 @@
  * What it deliberately does NOT show: any hidden reasoning. The "reasons" here
  * are the router's own short operational notes (spec §81).
  */
-import { useEffect, useRef, useState } from "react";
-import { api, streamChat, type ApiError, type Decision, type Model } from "../api.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, streamChat, type ApiError, type Conversation, type Decision, type Model } from "../api.ts";
+import { ConversationList } from "./ConversationList.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
 
 type Turn =
@@ -22,6 +23,8 @@ type Turn =
       usage: { inputTokens: number; outputTokens: number; costUsd: number } | null;
       /** Set when a spending limit constrained this request (spec §66). */
       budget: { message: string | null; action: string } | null;
+      /** True for a turn loaded from history rather than streamed just now. */
+      restored?: boolean;
       latencyMs: number | null;
       error: ApiError | null;
       streaming: boolean;
@@ -33,9 +36,15 @@ export function Chat({
   models,
   onActivity,
   initialTurns = [],
+  showHistory = true,
 }: {
   models: Model[];
   onActivity: () => void;
+  /**
+   * The browser demo keeps conversations in memory only, so a history sidebar
+   * there would promise persistence it does not have.
+   */
+  showHistory?: boolean;
   /**
    * Seeds the transcript so the page opens showing what it does rather than an
    * empty box. Used only by the browser demo; the real app starts empty
@@ -59,6 +68,8 @@ export function Chat({
   const [privacy, setPrivacy] = useState<string>("normal");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -68,6 +79,62 @@ export function Chat({
 
   // Leaving the page mid-stream must cancel the server-side model call too.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  const refreshConversations = useCallback(async () => {
+    if (!showHistory) return;
+    try {
+      setConversations(await api.conversations());
+    } catch {
+      setConversations([]);
+    }
+  }, [showHistory]);
+
+  useEffect(() => { void refreshConversations(); }, [refreshConversations]);
+
+  /**
+   * Loads a saved conversation into the transcript.
+   *
+   * Stored turns carry no routing decision — that was a property of the request
+   * at the time, not of the message — so they render without one rather than
+   * with an invented one.
+   */
+  async function openConversation(id: string): Promise<void> {
+    if (busy) return;
+    setLoadingHistory(true);
+    try {
+      const stored = await api.messages(id);
+      setTurns(
+        stored.map((m) =>
+          m.role === "user"
+            ? ({ kind: "user", text: m.content } as Turn)
+            : ({
+                kind: "assistant",
+                text: m.content,
+                decision: null,
+                attempts: m.modelId ? [{ modelId: m.modelId, isFallback: false }] : [],
+                usage: null,
+                budget: null,
+                latencyMs: null,
+                error: null,
+                streaming: false,
+                restored: true,
+              } as Turn),
+        ),
+      );
+      setConversationId(id);
+    } catch {
+      /* the list will refresh and drop it if it is gone */
+      void refreshConversations();
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  function startNew(): void {
+    if (busy) return;
+    setTurns([]);
+    setConversationId(null);
+  }
 
   function patchLast(fn: (t: Extract<Turn, { kind: "assistant" }>) => void): void {
     setTurns((prev) => {
@@ -124,6 +191,7 @@ export function Chat({
     setBusy(false);
     abortRef.current = null;
     onActivity();
+    void refreshConversations();
   }
 
   function stop(): void {
@@ -134,8 +202,8 @@ export function Chat({
 
   const enabledModels = models.filter((m) => m.enabled);
 
-  return (
-    <div className="flex h-full flex-col gap-4">
+  const chatColumn = (
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <Panel title="Request">
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
@@ -204,10 +272,11 @@ export function Chat({
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); }
           }}
         />
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-[11px] text-dim">
             {enabledModels.length} model{enabledModels.length === 1 ? "" : "s"} available
-            {conversationId ? " · conversation saved" : ""}
+            {conversationId ? " · saved" : ""}
+            {loadingHistory ? " · loading history…" : ""}
           </span>
           <div className="flex gap-2">
             {busy ? <Button variant="danger" onClick={stop}>Stop</Button> : null}
@@ -217,6 +286,32 @@ export function Chat({
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  if (!showHistory) return chatColumn;
+
+  // The sidebar sits beside the chat on wide screens and above it on narrow
+  // ones, where it is capped so it cannot push the composer off the screen.
+  return (
+    <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="max-h-[40vh] min-h-0 lg:max-h-none">
+        <ConversationList
+          conversations={conversations}
+          activeId={conversationId}
+          busy={busy}
+          onOpen={(id) => void openConversation(id)}
+          onNew={startNew}
+          onChanged={() => {
+            void refreshConversations();
+            // The open conversation may have just been deleted.
+            void api.conversations().then((list) => {
+              if (conversationId && !list.some((c) => c.id === conversationId)) startNew();
+            });
+          }}
+        />
+      </div>
+      {chatColumn}
     </div>
   );
 }
@@ -247,6 +342,11 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
               ran.local ? <Badge tone="live">local</Badge> : <Badge>{ran.providerId}</Badge>
             ) : null}
             <Badge tone="accent">{turn.decision?.mode}</Badge>
+          </>
+        ) : turn.restored ? (
+          <>
+            <span className="text-xs text-ink">{actualModelId ?? "assistant"}</span>
+            <span className="text-[11px] text-dim">from history</span>
           </>
         ) : (
           <span className="text-xs text-dim">{turn.streaming ? "Routing…" : "No model selected"}</span>
