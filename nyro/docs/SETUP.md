@@ -21,42 +21,45 @@ and `TEST_DATABASE_URL` at them. No extensions are required.
 ## 2. Configuration
 
 ```bash
-cp .env.example .env
-openssl rand -base64 32        # paste the output into NYRO_SECRET_KEY
+pnpm install
+pnpm setup
 ```
+
+`pnpm setup` writes `.env` from `.env.example` and generates `NYRO_SECRET_KEY`
+for you. It never touches an existing `.env` — regenerating that key would make
+every stored provider API key undecryptable. It is a Node script, so it behaves
+identically on Windows, where `openssl` is often absent.
 
 `NYRO_SECRET_KEY` encrypts provider API keys at rest. **Back it up.** If it is
 lost or changed, stored keys cannot be decrypted and must be re-entered — NYRO
 will tell you so rather than failing silently.
 
-On Windows without `openssl`:
-
-```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
-```
-
-## 3. Install and migrate
+## 3. Run it
 
 ```bash
-pnpm install
-pnpm migrate
+pnpm start
 ```
+
+Builds the UI, applies migrations, and starts NYRO. Then open:
+
+**http://localhost:8787**
+
+That is the whole application. The API serves the built web app itself, so
+there is one process on one origin — no second server, no dev proxy, and no
+CORS, because the browser's `/api` requests are same-origin by construction.
 
 Migrations are idempotent; re-running prints `Database already up to date.`
 
-## 4. Run
+### Development instead
 
 ```bash
 pnpm dev
 ```
 
-- API: http://127.0.0.1:8787
-- Web: http://localhost:5173
+Runs Vite on :5173 with hot reload, proxying `/api` to the API on :8787. Use
+this while changing the UI; use `pnpm start` to run the real thing.
 
-The web dev server proxies `/api` to the API, so the browser makes same-origin
-requests.
-
-## 5. Connect a provider
+## 4. Connect a provider
 
 ### Ollama (local)
 
@@ -90,7 +93,7 @@ Presets ship for OpenAI, Anthropic, Google Gemini, Groq, Mistral, OpenRouter
 and xAI, plus **Custom (OpenAI-compatible)** for vLLM, LM Studio, llama.cpp, a
 proxy, or anything else speaking that protocol.
 
-## 6. Verify it works
+## 5. Verify it works
 
 ```bash
 curl http://127.0.0.1:8787/api/health | jq

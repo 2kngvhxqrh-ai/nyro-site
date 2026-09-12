@@ -20,6 +20,7 @@ import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
 import { logger } from "../util/logger.ts";
 import { HttpRouter, readJsonBody, sendJson, type RequestContext } from "./router.ts";
 import { SseStream } from "./sse.ts";
+import { serveStatic } from "./static.ts";
 import {
   chatRequestSchema,
   createConversationSchema,
@@ -369,6 +370,19 @@ export function createHttpServer(deps: ServerDeps): Server {
 
     const match = router.match(req.method ?? "GET", url.pathname);
     if (!match) {
+      // An unmatched /api path is a genuine 404. Anything else may be the web
+      // UI, when this process is also serving it.
+      const isApi = url.pathname.startsWith("/api/");
+      if (!isApi && deps.config.staticDir && (req.method === "GET" || req.method === "HEAD")) {
+        serveStatic(deps.config.staticDir, url.pathname, res)
+          .then((result) => {
+            if (!result.served) {
+              sendJson(res, 404, { error: { code: "bad_request", message: "Not found" } });
+            }
+          })
+          .catch((err) => errorResponse(res, err, "http:static"));
+        return;
+      }
       sendJson(res, 404, { error: { code: "bad_request", message: `No route for ${req.method} ${url.pathname}` } });
       return;
     }

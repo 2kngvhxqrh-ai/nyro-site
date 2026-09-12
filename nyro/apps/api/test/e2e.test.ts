@@ -42,6 +42,7 @@ function testConfig(): NyroConfig {
     defaultModelHint: null,
     enableMockProvider: false,
     requestTimeoutMs: 15_000,
+    staticDir: null,
   };
 }
 

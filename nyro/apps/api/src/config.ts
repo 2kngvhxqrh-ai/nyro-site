@@ -20,6 +20,12 @@ export interface NyroConfig {
   defaultModelHint: string | null;
   enableMockProvider: boolean;
   requestTimeoutMs: number;
+  /**
+   * When set, the API also serves the built web UI from this directory, making
+   * NYRO a single process on a single origin. Unset in development, where Vite
+   * serves the UI and proxies /api.
+   */
+  staticDir: string | null;
 }
 
 function required(name: string): string {
@@ -61,5 +67,6 @@ export function loadConfig(): NyroConfig {
     defaultModelHint: optional("DEFAULT_MODEL"),
     enableMockProvider: (optional("NYRO_ENABLE_MOCK_PROVIDER") ?? "false").toLowerCase() === "true",
     requestTimeoutMs: intOr("NYRO_PROVIDER_TIMEOUT_MS", 120_000),
+    staticDir: optional("NYRO_STATIC_DIR"),
   };
 }

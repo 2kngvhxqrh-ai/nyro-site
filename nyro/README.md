@@ -50,15 +50,20 @@ Two things are worth calling out because their *absence is visible* in the code:
 
 ## Quick start
 
-See [`docs/SETUP.md`](docs/SETUP.md). Short version:
-
 ```bash
-docker compose -f docker/docker-compose.yml up -d
-cp .env.example .env && openssl rand -base64 32   # paste into NYRO_SECRET_KEY
+docker compose -f docker/docker-compose.yml up -d   # Postgres
 pnpm install
-pnpm migrate
-pnpm dev                                          # API :8787, web :5173
+pnpm setup                                          # writes .env, generates the encryption key
+pnpm start                                          # builds the UI, migrates, serves everything
 ```
+
+Then open **http://localhost:8787**. That is the whole app — the API serves the
+built UI, so it is one process on one origin.
+
+Set `OLLAMA_BASE_URL` in `.env` (or add a provider in the UI) to connect a model.
+
+For development with hot reload, `pnpm dev` instead runs Vite on :5173 with the
+API on :8787. Full detail in [`docs/SETUP.md`](docs/SETUP.md).
 
 ## Layout
 

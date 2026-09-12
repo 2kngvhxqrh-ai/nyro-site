@@ -12,6 +12,8 @@
     "build": "pnpm --filter \"./apps/*\" build",
     "typecheck": "pnpm --filter \"./apps/*\" typecheck",
     "test": "pnpm --filter @nyro/api test",
-    "migrate": "pnpm --filter @nyro/api migrate"
+    "migrate": "pnpm --filter @nyro/api migrate",
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs"
   }
 }

@@ -17,6 +17,10 @@ async function start(): Promise<void> {
 
   app.server.listen(config.port, config.host, () => {
     log.info("NYRO API listening", { host: config.host, port: config.port, env: config.env });
+    if (config.staticDir) {
+      // The line a person actually needs when they start the thing.
+      process.stdout.write(`\n  NYRO is running: http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}\n\n`);
+    }
   });
 
   app.deps.registry
