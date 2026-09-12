@@ -103,6 +103,15 @@ export interface BudgetState {
   remaining: { dayUsd: number | null; weekUsd: number | null; monthUsd: number | null };
 }
 
+export interface RoutingRule {
+  id: string;
+  enabled: boolean;
+  name: string;
+  whenCapability: string;
+  preferModelId: string | null;
+  preferProviderId: string | null;
+}
+
 export interface ApiError {
   code: string;
   message: string;
@@ -182,6 +191,9 @@ export const api = {
   setBudget: (config: BudgetConfig) =>
     request<{ config: BudgetConfig }>("/api/budget", { method: "PUT", body: JSON.stringify(config) }),
   clearBudget: () => request<{ config: BudgetConfig }>("/api/budget", { method: "DELETE" }),
+  routingRules: () => request<{ rules: RoutingRule[] }>("/api/routing-rules"),
+  setRoutingRules: (rules: RoutingRule[]) =>
+    request<{ rules: RoutingRule[] }>("/api/routing-rules", { method: "PUT", body: JSON.stringify({ rules }) }),
   stats: () =>
     request<{
       totalRuns: number; failedRuns: number; cancelledRuns: number; totalCostUsd: number; avgLatencyMs: number;

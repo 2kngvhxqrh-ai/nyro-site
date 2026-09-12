@@ -90,6 +90,12 @@ provider, never the whole account. Both cases are tested in
 `apps/api/test/budget.test.ts`, and both are safeguards that would otherwise
 quietly become obstacles.
 
+**12. A routing rule is a preference, never a constraint.**
+Rules boost a candidate's score; they cannot add one the eligibility filter
+removed. That is what keeps a rule from overriding privacy, a budget, or
+availability. If you ever make a rule a hard filter, "coding goes to Claude"
+becomes a way to leak private code to the cloud.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

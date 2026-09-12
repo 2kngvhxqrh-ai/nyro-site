@@ -34,13 +34,14 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-134 automated tests, run repeatedly with no flakes.
+160 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
 | `router.test.ts` | 24 | privacy constraints, modes, overrides, determinism, hard vs soft capabilities |
 | `providers.test.ts` | 21 | all three wire protocols against real HTTP servers, chunk boundaries, error mapping, cross-transport cancellation |
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
+| `routing-rules.test.ts` | 20 | rules steer routing, and can never beat privacy, budget or availability |
 | `budget.test.ts` | 22 | spending limits: period caps, per-provider caps, and the cases where a budget must NOT fire |
 | `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
 | `e2e.test.ts` | 23 | full stack on real Postgres: discovery, chat, streaming, fallback, cancellation accounting, restart persistence |

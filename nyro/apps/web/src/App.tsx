@@ -131,7 +131,7 @@ export function App() {
         ) : view === "models" ? (
           <Models providers={providers} models={models} refresh={refreshRegistry} />
         ) : view === "settings" ? (
-          <Settings providers={providers} />
+          <Settings providers={providers} models={models} />
         ) : (
           <Health health={health} stats={stats} refresh={refreshHealth} />
         )}

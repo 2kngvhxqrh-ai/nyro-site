@@ -184,6 +184,15 @@ export function route(models: RegisteredModel[], req: RoutingRequest): RoutingDe
   return { mode: req.mode, candidates: scoreAll(eligible, req), rejected };
 }
 
+/**
+ * How strongly a user's routing rule outranks the score.
+ *
+ * Large enough to dominate ordinary quality/speed/cost differences — the user
+ * said what they want — but applied only to candidates that already passed
+ * eligibility, so it can never override privacy, a budget, or availability.
+ */
+const PREFERENCE_BOOST = 100;
+
 function scoreAll(models: RegisteredModel[], req: RoutingRequest): RoutingCandidate[] {
   const w = weightsFor(req.mode);
   const candidates = models.map((model) => {
@@ -198,7 +207,21 @@ function scoreAll(models: RegisteredModel[], req: RoutingRequest): RoutingCandid
     if (model.health === "degraded") score -= 1.5;  // prefer a healthy route
     if (model.health === "unknown") score -= 0.25;  // never health-checked yet
 
-    return { model, score, estimatedCostUsd: cost, reasons: reasonsFor(model, req, cost) };
+    const reasons = reasonsFor(model, req, cost);
+
+    // A model named by a rule outranks one matched only by its provider, so a
+    // specific rule is not diluted by a general one.
+    for (const pref of req.preferences ?? []) {
+      if (pref.modelId !== null && pref.modelId === model.id) {
+        score += PREFERENCE_BOOST * 2;
+        reasons.unshift(`matches ${pref.reason}`);
+      } else if (pref.providerId !== null && pref.providerId === model.providerId) {
+        score += PREFERENCE_BOOST;
+        reasons.unshift(`matches ${pref.reason}`);
+      }
+    }
+
+    return { model, score, estimatedCostUsd: cost, reasons };
   });
 
   // Deterministic: equal scores resolve by id so routing is reproducible.

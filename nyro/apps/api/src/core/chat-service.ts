@@ -12,6 +12,12 @@
  */
 import type { ConversationRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import {
+  DEFAULT_ROUTING_RULES,
+  preferencesFor,
+  routingRulesSchema,
+  type RoutingRules,
+} from "./routing-rules.ts";
+import {
   budgetConfigSchema,
   DEFAULT_BUDGET,
   evaluateBudget,
@@ -83,6 +89,8 @@ const HISTORY_TURNS = 20;
 
 /** Where the budget document lives in the settings table. */
 export const BUDGET_SETTINGS_KEY = "budget";
+/** Where the user's task-specific routing rules live (spec §10). */
+export const ROUTING_RULES_SETTINGS_KEY = "routing_rules";
 
 export class ChatService {
   private readonly registry: Registry;
@@ -119,6 +127,14 @@ export class ChatService {
     return parsed.success ? parsed.data : DEFAULT_BUDGET;
   }
 
+  /** Stored routing rules, falling back to none. */
+  async routingRules(): Promise<RoutingRules> {
+    const raw = await this.settings.get<unknown>(ROUTING_RULES_SETTINGS_KEY);
+    if (raw === null) return DEFAULT_ROUTING_RULES;
+    const parsed = routingRulesSchema.safeParse(raw);
+    return parsed.success ? parsed.data : DEFAULT_ROUTING_RULES;
+  }
+
   async plan(
     input: ChatInput,
     history: ChatMessage[],
@@ -130,6 +146,7 @@ export class ChatService {
     const config = await this.budgetConfig();
     const spend = await this.runs.spend();
     const budget = evaluateBudget(config, spend, { privacy: input.privacy, mode: input.mode });
+    const { rules } = await this.routingRules();
 
     const messages: ChatMessage[] = [];
     if (input.systemPrompt) messages.push({ role: "system", content: input.systemPrompt });
@@ -147,15 +164,21 @@ export class ChatService {
     const ceilings = [input.maxCostUsd, budget.maxCostUsd].filter((v): v is number => v !== null && v !== undefined);
     const maxCostUsd = ceilings.length > 0 ? Math.min(...ceilings) : null;
 
+    const requiredCapabilities = [...new Set<Capability>(["chat", ...input.requiredCapabilities])];
+    const preferredCapabilities = inferPreferredCapabilities(input.message);
+
     const req: RoutingRequest = {
       mode: input.mode,
+      // Rules see everything the request wants, stated or inferred, so
+      // "this looks like coding" is enough to fire a coding rule.
+      preferences: preferencesFor(rules, [...requiredCapabilities, ...preferredCapabilities]),
       requestedModelId: input.modelId,
       requestedProviderId: input.providerId,
       excludedProviderIds: exhaustedProviders(config, spend),
       // "chat" is the one genuine requirement for a chat turn; everything the
       // keyword pass guessed is a preference.
-      requiredCapabilities: [...new Set<Capability>(["chat", ...input.requiredCapabilities])],
-      preferredCapabilities: inferPreferredCapabilities(input.message),
+      requiredCapabilities,
+      preferredCapabilities,
       privacy: effectivePrivacy,
       estimatedInputTokens,
       // Used only for cost ceilings and context headroom, never billed.

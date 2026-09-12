@@ -627,6 +627,87 @@ describe("budget enforcement (spec §66)", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("routing rules (spec §10)", () => {
+  async function setRules(rules: unknown[]): Promise<Response> {
+    return api("/api/routing-rules", { method: "PUT", body: JSON.stringify({ rules }) });
+  }
+
+  test("a rule steers a coding request to the chosen provider", async () => {
+    const res = await setRules([
+      { id: "r1", enabled: true, name: "Code to OpenAI", whenCapability: "coding", preferProviderId: "openai" },
+    ]);
+    assert.equal(res.status, 200, await res.text());
+
+    const r = await json<{ decision: { chosen: { providerId: string; reasons: string[] } } }>(
+      "/api/route/preview",
+      { method: "POST", body: JSON.stringify({ message: "refactor this python function", mode: "auto" }) },
+    );
+    assert.equal(r.decision.chosen.providerId, "openai");
+    assert.ok(r.decision.chosen.reasons.some((x) => /Code to OpenAI/.test(x)), JSON.stringify(r.decision.chosen.reasons));
+    await setRules([]);
+  });
+
+  test("a rule does not fire on an unrelated request", async () => {
+    await setRules([
+      { id: "r1", enabled: true, name: "Vision to OpenAI", whenCapability: "vision", preferProviderId: "openai" },
+    ]);
+    const r = await json<{ decision: { chosen: { reasons: string[] } } }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({ message: "hello there", mode: "auto" }),
+    });
+    assert.ok(!r.decision.chosen.reasons.some((x) => /Vision to OpenAI/.test(x)));
+    await setRules([]);
+  });
+
+  test("a rule cannot override local-only privacy", async () => {
+    // The safety case: a user rule must not become a way to leak private work.
+    await setRules([
+      { id: "r1", enabled: true, name: "Code to OpenAI", whenCapability: "coding", preferProviderId: "openai" },
+    ]);
+    const r = await json<{ decision: { chosen: { local: boolean; providerId: string } } }>(
+      "/api/route/preview",
+      { method: "POST", body: JSON.stringify({ message: "refactor this python function", privacy: "local_only" }) },
+    );
+    assert.equal(r.decision.chosen.local, true, "a routing rule leaked a local-only request to the cloud");
+    await setRules([]);
+  });
+
+  test("a disabled rule is stored but does not fire", async () => {
+    await setRules([
+      { id: "r1", enabled: false, name: "Off", whenCapability: "coding", preferProviderId: "openai" },
+    ]);
+    const stored = await json<{ rules: Array<{ enabled: boolean }> }>("/api/routing-rules");
+    assert.equal(stored.rules[0]!.enabled, false);
+    const r = await json<{ decision: { chosen: { reasons: string[] } } }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({ message: "refactor this python function" }),
+    });
+    assert.ok(!r.decision.chosen.reasons.some((x) => /Off/.test(x)));
+    await setRules([]);
+  });
+
+  test("a rule pointing at an unknown provider is rejected on save", async () => {
+    const res = await setRules([
+      { id: "r1", enabled: true, name: "Bad", whenCapability: "coding", preferProviderId: "does-not-exist" },
+    ]);
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: { message: string } };
+    assert.match(body.error.message, /unknown provider/i);
+  });
+
+  test("rules survive being read back", async () => {
+    await setRules([
+      { id: "r1", enabled: true, name: "Keep me", whenCapability: "reasoning", preferProviderId: "ollama" },
+    ]);
+    const stored = await json<{ rules: Array<{ name: string; whenCapability: string }> }>("/api/routing-rules");
+    assert.equal(stored.rules.length, 1);
+    assert.equal(stored.rules[0]!.name, "Keep me");
+    assert.equal(stored.rules[0]!.whenCapability, "reasoning");
+    await setRules([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("persistence across a restart", () => {
   test("providers, models and conversations survive a full app restart", async () => {
     // Crash-recovery groundwork (spec §141): state lives in Postgres, not memory.

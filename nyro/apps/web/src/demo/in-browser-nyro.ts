@@ -314,6 +314,13 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
   }
 
+  if (path === "/api/routing-rules" && method === "GET") {
+    return jsonResponse(200, { rules: [] });
+  }
+  if (path === "/api/routing-rules" && method === "PUT") {
+    return errorResponse(409, "config_error", "Saving routing rules needs the real NYRO API. This page has no backend.");
+  }
+
   if (path === "/api/stats") {
     const ok = runs.filter((r) => r.ok);
     const failed = runs.filter((r) => !r.ok && r.errorCode !== "cancelled");

@@ -14,7 +14,8 @@ import type { EventBus } from "../core/events.ts";
 import { systemHealth } from "../core/health.ts";
 import type { Registry } from "../core/registry.ts";
 import type { ChatService } from "../core/chat-service.ts";
-import { BUDGET_SETTINGS_KEY } from "../core/chat-service.ts";
+import { BUDGET_SETTINGS_KEY, ROUTING_RULES_SETTINGS_KEY } from "../core/chat-service.ts";
+import { routingRulesSchema, validateRuleTargets } from "../core/routing-rules.ts";
 import { budgetConfigSchema, evaluateBudget, DEFAULT_BUDGET } from "../core/budget.ts";
 import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import type { Pool } from "../db/pool.ts";
@@ -335,6 +336,24 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
   r.delete("/api/budget", async (ctx) => {
     await deps.settings.set(BUDGET_SETTINGS_KEY, DEFAULT_BUDGET);
     sendJson(ctx.res, 200, { config: DEFAULT_BUDGET });
+  });
+
+  // ---- Routing rules (spec §10) -------------------------------------------
+  r.get("/api/routing-rules", async (ctx) => {
+    sendJson(ctx.res, 200, await deps.chat.routingRules());
+  });
+
+  r.put("/api/routing-rules", async (ctx) => {
+    const body = parseOr400(routingRulesSchema, await readJsonBody(ctx.req));
+    // Targets are checked against the live registry, so a rule cannot be saved
+    // pointing at something that does not exist and then silently never fire.
+    const models = new Set((await deps.models.list()).map((m) => m.id));
+    const providers = new Set((await deps.providers.listPublic()).map((p) => p.id));
+    const problem = validateRuleTargets(body.rules, models, providers);
+    if (problem) throw new NyroError("bad_request", problem, { component: "http" });
+
+    await deps.settings.set(ROUTING_RULES_SETTINGS_KEY, body);
+    sendJson(ctx.res, 200, body);
   });
 
   // ---- Stats --------------------------------------------------------------

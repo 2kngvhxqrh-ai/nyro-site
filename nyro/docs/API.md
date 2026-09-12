@@ -149,6 +149,24 @@ event, not an HTTP status.
 - `POST /api/conversations` — `{ "title": "…" }`
 - `GET /api/conversations/:id/messages`
 
+## Routing rules (spec §10)
+
+### `GET /api/routing-rules` · `PUT /api/routing-rules`
+```json
+{ "rules": [
+  { "id": "r1", "enabled": true, "name": "Coding to Claude",
+    "whenCapability": "coding", "preferProviderId": "anthropic", "preferModelId": null }
+] }
+```
+A rule fires when the request wants that capability, whether the caller stated
+it or NYRO inferred it. Targets are validated against the live registry on
+save, so a rule cannot be stored pointing at something that does not exist.
+
+**A rule is a preference, not a constraint.** It reorders candidates the router
+already accepted, so it can never send a local-only or sensitive request to the
+cloud, never exceed a spending limit, and never fail a request because the
+preferred model is offline. The routing explanation names the rule that applied.
+
 ## Budget (spec §66)
 
 ### `GET /api/budget`

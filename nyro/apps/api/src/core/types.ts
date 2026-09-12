@@ -93,6 +93,14 @@ export interface RoutingRequest {
    * still reports *why* those models were dropped.
    */
   excludedProviderIds?: string[];
+  /**
+   * The user's own task-specific routing rules (spec §10), as scoring nudges.
+   *
+   * Deliberately NOT a filter: a preference can only reorder candidates the
+   * router already accepted, so it can never breach privacy, exceed a budget,
+   * or turn an unavailable model into a hard failure.
+   */
+  preferences?: Array<{ modelId: string | null; providerId: string | null; reason: string }>;
 }
 
 export interface RoutingCandidate {
