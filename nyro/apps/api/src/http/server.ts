@@ -14,7 +14,9 @@ import type { EventBus } from "../core/events.ts";
 import { systemHealth } from "../core/health.ts";
 import type { Registry } from "../core/registry.ts";
 import type { ChatService } from "../core/chat-service.ts";
-import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo } from "../db/repos.ts";
+import { BUDGET_SETTINGS_KEY } from "../core/chat-service.ts";
+import { budgetConfigSchema, evaluateBudget, DEFAULT_BUDGET } from "../core/budget.ts";
+import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import type { Pool } from "../db/pool.ts";
 import { PROVIDER_PRESETS, findPreset } from "../providers/presets.ts";
 import { logger } from "../util/logger.ts";
@@ -38,6 +40,7 @@ export interface ServerDeps {
   models: ModelRepo;
   conversations: ConversationRepo;
   runs: RunRepo;
+  settings: SettingsRepo;
   registry: Registry;
   chat: ChatService;
   bus: EventBus;
@@ -183,7 +186,7 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
    */
   r.post("/api/route/preview", async (ctx) => {
     const body = parseOr400(chatRequestSchema, await readJsonBody(ctx.req));
-    const { decision, messages } = await deps.chat.plan(
+    const { decision, messages, budget } = await deps.chat.plan(
       {
         conversationId: body.conversationId,
         message: body.message,
@@ -201,6 +204,7 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     sendJson(ctx.res, 200, {
       estimatedInputTokens: estimateMessagesTokens(messages),
       decision: serializeDecision(decision),
+      budget: { action: budget.action, message: budget.message, breaches: budget.breaches },
     });
   });
 
@@ -229,8 +233,14 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     const controller = new AbortController();
     ctx.req.on("aborted", () => controller.abort());
 
-    const outcome = await deps.chat.send(toChatInput(body), {}, controller.signal);
+    let budgetNotice: { message: string | null; action: string } | null = null;
+    const outcome = await deps.chat.send(
+      toChatInput(body),
+      { onBudget: (v) => { budgetNotice = { message: v.message, action: v.action }; } },
+      controller.signal,
+    );
     sendJson(ctx.res, 200, {
+      budget: budgetNotice,
       conversationId: outcome.conversationId,
       content: outcome.content,
       model: publicModel(outcome),
@@ -257,6 +267,7 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
       const outcome = await deps.chat.send(
         toChatInput(body),
         {
+          onBudget: (verdict) => sse.send({ type: "budget", data: { message: verdict.message, action: verdict.action, breaches: verdict.breaches } }),
           onRouted: (decision) => sse.send({ type: "routing", data: serializeDecision(decision) }),
           onAttempt: (info) => sse.send({ type: "attempt", data: info }),
           onDelta: (text) => sse.send({ type: "delta", data: { text } }),
@@ -282,6 +293,48 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     } finally {
       sse.close();
     }
+  });
+
+  // ---- Budget (spec §66) --------------------------------------------------
+  r.get("/api/budget", async (ctx) => {
+    const config = await deps.chat.budgetConfig();
+    const spend = await deps.runs.spend();
+    // Reported against a normal request, which is the case a limit actually
+    // constrains; a local-only request is never blocked by cost.
+    const verdict = evaluateBudget(config, spend, { privacy: "normal", mode: "auto" });
+    sendJson(ctx.res, 200, {
+      config,
+      spend,
+      status: {
+        action: verdict.action,
+        message: verdict.message,
+        breaches: verdict.breaches,
+      },
+      remaining: {
+        dayUsd: config.dailyUsd === null ? null : Math.max(0, config.dailyUsd - spend.dayUsd),
+        weekUsd: config.weeklyUsd === null ? null : Math.max(0, config.weeklyUsd - spend.weekUsd),
+        monthUsd: config.monthlyUsd === null ? null : Math.max(0, config.monthlyUsd - spend.monthUsd),
+      },
+    });
+  });
+
+  r.put("/api/budget", async (ctx) => {
+    const body = parseOr400(budgetConfigSchema, await readJsonBody(ctx.req));
+    // Only known providers can carry a cap, so a typo cannot create a limit
+    // that silently never applies.
+    const known = new Set((await deps.providers.listPublic()).map((p) => p.id));
+    for (const id of Object.keys(body.perProviderMonthlyUsd)) {
+      if (!known.has(id)) {
+        throw new NyroError("bad_request", `Unknown provider "${id}" in perProviderMonthlyUsd.`, { component: "http" });
+      }
+    }
+    await deps.settings.set(BUDGET_SETTINGS_KEY, body);
+    sendJson(ctx.res, 200, { config: body });
+  });
+
+  r.delete("/api/budget", async (ctx) => {
+    await deps.settings.set(BUDGET_SETTINGS_KEY, DEFAULT_BUDGET);
+    sendJson(ctx.res, 200, { config: DEFAULT_BUDGET });
   });
 
   // ---- Stats --------------------------------------------------------------

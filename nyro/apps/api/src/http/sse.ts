@@ -10,6 +10,8 @@ import type { ServerResponse } from "node:http";
 export type SseEvent =
   /** Which model was chosen and why — shown in the UI, never chain-of-thought. */
   | { type: "routing"; data: unknown }
+  /** A spending limit constrained the request (spec §66). */
+  | { type: "budget"; data: { message: string | null; action: string; breaches: unknown[] } }
   /** A fallback attempt started. */
   | { type: "attempt"; data: { modelId: string; attemptIndex: number; isFallback: boolean } }
   | { type: "delta"; data: { text: string } }

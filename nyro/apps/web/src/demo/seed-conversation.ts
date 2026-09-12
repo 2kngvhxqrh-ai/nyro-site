@@ -63,6 +63,7 @@ export function seedConversation(): Turn[] {
       },
       attempts: [{ modelId: first.model.id, isFallback: false }],
       usage: { inputTokens: run.inputTokens, outputTokens: run.outputTokens, costUsd },
+      budget: null,
       latencyMs: null,
       error: null,
       streaming: false,

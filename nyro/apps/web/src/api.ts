@@ -80,6 +80,29 @@ export interface Decision {
   rejected: Array<{ modelId: string; reason: string }>;
 }
 
+export interface BudgetConfig {
+  dailyUsd: number | null;
+  weeklyUsd: number | null;
+  monthlyUsd: number | null;
+  perRequestUsd: number | null;
+  perProviderMonthlyUsd: Record<string, number>;
+  onExceeded: "local_only" | "block";
+}
+
+export interface BudgetBreach {
+  period: "daily" | "weekly" | "monthly" | "provider";
+  providerId?: string;
+  limitUsd: number;
+  spentUsd: number;
+}
+
+export interface BudgetState {
+  config: BudgetConfig;
+  spend: { dayUsd: number; weekUsd: number; monthUsd: number; perProviderMonthUsd: Record<string, number> };
+  status: { action: "allow" | "force_local" | "block"; message: string | null; breaches: BudgetBreach[] };
+  remaining: { dayUsd: number | null; weekUsd: number | null; monthUsd: number | null };
+}
+
 export interface ApiError {
   code: string;
   message: string;
@@ -155,6 +178,10 @@ export const api = {
     request<{ messages: Array<{ id: string; role: string; content: string; modelId: string | null }> }>(
       `/api/conversations/${encodeURIComponent(id)}/messages`,
     ).then((r) => r.messages),
+  budget: () => request<BudgetState>("/api/budget"),
+  setBudget: (config: BudgetConfig) =>
+    request<{ config: BudgetConfig }>("/api/budget", { method: "PUT", body: JSON.stringify(config) }),
+  clearBudget: () => request<{ config: BudgetConfig }>("/api/budget", { method: "DELETE" }),
   stats: () =>
     request<{
       totalRuns: number; failedRuns: number; cancelledRuns: number; totalCostUsd: number; avgLatencyMs: number;
@@ -167,6 +194,7 @@ export const api = {
 // ---------------------------------------------------------------------------
 
 export interface StreamHandlers {
+  onBudget?: (b: { message: string | null; action: string }) => void;
   onRouting?: (d: Decision) => void;
   onAttempt?: (a: { modelId: string; attemptIndex: number; isFallback: boolean }) => void;
   onDelta?: (text: string) => void;
@@ -246,6 +274,7 @@ export function streamChat(
           try { parsed = JSON.parse(data); } catch { continue; }
 
           switch (type) {
+            case "budget": handlers.onBudget?.(parsed as { message: string | null; action: string }); break;
             case "routing": handlers.onRouting?.(parsed as Decision); break;
             case "attempt": handlers.onAttempt?.(parsed as { modelId: string; attemptIndex: number; isFallback: boolean }); break;
             case "delta": handlers.onDelta?.((parsed as { text: string }).text); break;

@@ -66,8 +66,19 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-6 text-center text-xs text-dim">{children}</p>;
 }
 
+/**
+ * Money, at the precision the amount actually needs.
+ *
+ * Dollar amounts read as dollars ("$5.00", not "$5.000"); sub-cent amounts keep
+ * enough digits to stay distinguishable, since a model call can genuinely cost
+ * a fraction of a cent and rounding it to $0.00 hides real spend.
+ *
+ * Mirrors the server-side formatter in core/budget.ts, so a limit and its
+ * explanation never disagree about how much money is involved.
+ */
 export function formatCost(usd: number): string {
   if (usd === 0) return "free";
-  if (usd < 0.01) return `$${usd.toFixed(5)}`;
-  return `$${usd.toFixed(3)}`;
+  if (usd < 0.01) return `$${usd.toFixed(5).replace(/0+$/, "").replace(/\.$/, "")}`;
+  if (usd < 1) return `$${usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
+  return `$${usd.toFixed(2)}`;
 }

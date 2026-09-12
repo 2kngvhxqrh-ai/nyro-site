@@ -517,6 +517,116 @@ describe("failure handling and fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("budget enforcement (spec §66)", () => {
+  async function setBudget(config: Record<string, unknown>): Promise<void> {
+    const res = await api("/api/budget", { method: "PUT", body: JSON.stringify(config) });
+    assert.equal(res.status, 200, `budget PUT failed: ${await res.text()}`);
+  }
+  async function clearBudget(): Promise<void> {
+    await api("/api/budget", { method: "DELETE" });
+  }
+
+  test("reports spend and limits", async () => {
+    await setBudget({ dailyUsd: 100 });
+    const b = await json<{ config: { dailyUsd: number }; spend: { dayUsd: number }; remaining: { dayUsd: number } }>("/api/budget");
+    assert.equal(b.config.dailyUsd, 100);
+    assert.equal(typeof b.spend.dayUsd, "number");
+    assert.ok(b.remaining.dayUsd <= 100);
+    await clearBudget();
+  });
+
+  test("a tiny daily cap forces a cloud request onto a local model", async () => {
+    // The cloud model is the natural auto choice here; the budget should move
+    // the request to the free local one rather than failing it.
+    await setBudget({ dailyUsd: 0 });
+    const r = await json<{ decision: { chosen: { local: boolean } }; budget: { action: string } }>(
+      "/api/route/preview",
+      { method: "POST", body: JSON.stringify({ message: "hello", mode: "auto" }) },
+    );
+    assert.equal(r.budget.action, "force_local");
+    assert.equal(r.decision.chosen.local, true, "budget did not force the request local");
+    await clearBudget();
+  });
+
+  test("block mode refuses the request with cost_limit_exceeded", async () => {
+    await setBudget({ dailyUsd: 0, onExceeded: "block" });
+    const res = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: "spend money" }) });
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "cost_limit_exceeded");
+    assert.match(body.error.message, /budget/i);
+    await clearBudget();
+  });
+
+  test("an exhausted budget still allows an explicitly local request", async () => {
+    // The safety-critical inverse: a spending limit must never stop free work.
+    await setBudget({ dailyUsd: 0, onExceeded: "block" });
+    const r = await json<{ content: string; model: { local: boolean } }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "local please", mode: "local_only" }),
+    });
+    assert.equal(r.model.local, true);
+    assert.match(r.content, /^local-reply:/);
+    await clearBudget();
+  });
+
+  test("a per-provider cap excludes only that provider, with a stated reason", async () => {
+    await setBudget({ perProviderMonthlyUsd: { openai: 0 } });
+    const r = await json<{ decision: { chosen: { providerId: string }; rejected: Array<{ modelId: string; reason: string }> } }>(
+      "/api/route/preview",
+      { method: "POST", body: JSON.stringify({ message: "hello", mode: "auto" }) },
+    );
+    assert.notEqual(r.decision.chosen.providerId, "openai");
+    assert.ok(
+      r.decision.rejected.some((x) => x.modelId.startsWith("openai:") && /monthly budget/.test(x.reason)),
+      `expected an openai rejection naming the budget, got ${JSON.stringify(r.decision.rejected)}`,
+    );
+    await clearBudget();
+  });
+
+  test("a cap for an unknown provider is rejected rather than silently ignored", async () => {
+    const res = await api("/api/budget", {
+      method: "PUT",
+      body: JSON.stringify({ perProviderMonthlyUsd: { "not-a-provider": 5 } }),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: { message: string } };
+    assert.match(body.error.message, /Unknown provider/);
+  });
+
+  test("a negative limit is rejected", async () => {
+    const res = await api("/api/budget", { method: "PUT", body: JSON.stringify({ dailyUsd: -5 }) });
+    assert.equal(res.status, 400);
+  });
+
+  test("the budget survives a change and is read back", async () => {
+    await setBudget({ dailyUsd: 7.5, onExceeded: "block" });
+    const b = await json<{ config: { dailyUsd: number; onExceeded: string } }>("/api/budget");
+    assert.equal(b.config.dailyUsd, 7.5);
+    assert.equal(b.config.onExceeded, "block");
+    await clearBudget();
+    const after = await json<{ config: { dailyUsd: number | null } }>("/api/budget");
+    assert.equal(after.config.dailyUsd, null);
+  });
+
+  test("the stream announces a budget constraint before routing", async () => {
+    await setBudget({ dailyUsd: 0 });
+    const res = await api("/api/chat/stream", {
+      method: "POST",
+      body: JSON.stringify({ message: "constrained", mode: "auto" }),
+    });
+    const order: string[] = [];
+    let budgetMsg: string | null = null;
+    await readSse(res, (type, data) => {
+      if (order.at(-1) !== type) order.push(type);
+      if (type === "budget") budgetMsg = (data as { message: string }).message;
+    });
+    assert.equal(order[0], "budget", `expected budget first, got ${order.join(",")}`);
+    assert.match(budgetMsg ?? "", /local models only/);
+    await clearBudget();
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("persistence across a restart", () => {
   test("providers, models and conversations survive a full app restart", async () => {
     // Crash-recovery groundwork (spec §141): state lives in Postgres, not memory.

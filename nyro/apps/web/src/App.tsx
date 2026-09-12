@@ -11,17 +11,19 @@ import { api, type HealthReport, type Model, type Provider } from "./api.ts";
 import { Chat } from "./components/Chat.tsx";
 import { Models } from "./components/Models.tsx";
 import { Health } from "./components/Health.tsx";
+import { Settings } from "./components/Settings.tsx";
 import { Dot } from "./components/ui.tsx";
 import { DemoBanner } from "./components/DemoBanner.tsx";
 import type { Turn } from "./components/Chat.tsx";
 import { DEMO_MODE } from "./demo-mode.ts";
 
-type View = "chat" | "models" | "health";
+type View = "chat" | "models" | "health" | "settings";
 
 const VIEWS: Array<{ key: View; label: string }> = [
   { key: "chat", label: "Chat" },
   { key: "models", label: "Models" },
   { key: "health", label: "Health" },
+  { key: "settings", label: "Settings" },
 ];
 
 export function App() {
@@ -128,6 +130,8 @@ export function App() {
           <Chat models={models} onActivity={() => void refreshHealth(false)} initialTurns={seedTurns} />
         ) : view === "models" ? (
           <Models providers={providers} models={models} refresh={refreshRegistry} />
+        ) : view === "settings" ? (
+          <Settings providers={providers} />
         ) : (
           <Health health={health} stats={stats} refresh={refreshHealth} />
         )}

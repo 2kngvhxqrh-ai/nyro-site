@@ -83,6 +83,13 @@ mode is the proof: it runs the UI unmodified against an in-browser core.
 the demo bundle stops containing the real router. A reimplementation would
 drift and start quietly lying about what NYRO does.
 
+**11. A spending limit must never block free work.**
+A request that is already local-only or sensitive costs nothing, so no budget
+applies to it. Likewise, one provider hitting its own cap excludes that
+provider, never the whole account. Both cases are tested in
+`apps/api/test/budget.test.ts`, and both are safeguards that would otherwise
+quietly become obstacles.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

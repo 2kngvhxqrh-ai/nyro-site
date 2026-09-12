@@ -86,6 +86,13 @@ export interface RoutingRequest {
   estimatedOutputTokens: number;
   /** Per-request hard cost ceiling in USD; candidates above it are excluded (spec §66). */
   maxCostUsd?: number | null;
+  /**
+   * Providers the request may not use, whatever else is true — currently set
+   * when a provider's own monthly budget is exhausted (spec §66). Kept as a
+   * routing input rather than a filter applied beforehand so the decision
+   * still reports *why* those models were dropped.
+   */
+  excludedProviderIds?: string[];
 }
 
 export interface RoutingCandidate {

@@ -98,6 +98,10 @@ function ineligibleReason(model: RegisteredModel, req: RoutingRequest): string |
     return "mode is cloud-only and this model is local";
   }
 
+  if (req.excludedProviderIds?.includes(model.providerId)) {
+    return `provider "${model.providerId}" has reached its monthly budget`;
+  }
+
   for (const cap of req.requiredCapabilities) {
     if (!model.capabilities.includes(cap)) return `model does not support "${cap}"`;
   }

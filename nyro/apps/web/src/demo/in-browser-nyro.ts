@@ -295,6 +295,25 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return jsonResponse(200, { conversations: list });
   }
 
+  if (path === "/api/budget" && method === "GET") {
+    // The demo has no real spend, so it reports zeros rather than inventing
+    // numbers that would look like the user's own money.
+    const zero = { dayUsd: 0, weekUsd: 0, monthUsd: 0, perProviderMonthUsd: {} };
+    return jsonResponse(200, {
+      config: {
+        dailyUsd: null, weeklyUsd: null, monthlyUsd: null, perRequestUsd: null,
+        perProviderMonthlyUsd: {}, onExceeded: "local_only",
+      },
+      spend: zero,
+      status: { action: "allow", message: null, breaches: [] },
+      remaining: { dayUsd: null, weekUsd: null, monthUsd: null },
+    });
+  }
+
+  if (path === "/api/budget" && (method === "PUT" || method === "DELETE")) {
+    return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
+  }
+
   if (path === "/api/stats") {
     const ok = runs.filter((r) => r.ok);
     const failed = runs.filter((r) => !r.ok && r.errorCode !== "cancelled");

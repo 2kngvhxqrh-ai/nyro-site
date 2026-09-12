@@ -10,7 +10,15 @@
  * from explicit request fields plus a cheap keyword pass; in Phase 5 a CEO
  * agent produces the same structure. Nothing downstream changes.
  */
-import type { ConversationRepo } from "../db/repos.ts";
+import type { ConversationRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
+import {
+  budgetConfigSchema,
+  DEFAULT_BUDGET,
+  evaluateBudget,
+  exhaustedProviders,
+  type BudgetConfig,
+  type BudgetVerdict,
+} from "./budget.ts";
 import type { EventBus } from "./events.ts";
 import { NyroError } from "./errors.ts";
 import { Executor } from "./executor.ts";
@@ -41,6 +49,8 @@ export interface ChatInput {
 }
 
 export interface ChatCallbacks {
+  /** Fired when a spending limit constrains the request, so the UI can say so. */
+  onBudget?: (verdict: BudgetVerdict) => void;
   onRouted?: (decision: RoutingDecision) => void;
   onDelta?: (text: string) => void;
   onAttempt?: (info: { modelId: string; attemptIndex: number; isFallback: boolean }) => void;
@@ -71,21 +81,55 @@ function inferPreferredCapabilities(message: string): Capability[] {
 /** How many recent turns to send. Real context management lands in Phase 3 (spec §128). */
 const HISTORY_TURNS = 20;
 
+/** Where the budget document lives in the settings table. */
+export const BUDGET_SETTINGS_KEY = "budget";
+
 export class ChatService {
   private readonly registry: Registry;
   private readonly conversations: ConversationRepo;
   private readonly executor: Executor;
   private readonly bus: EventBus;
+  private readonly settings: SettingsRepo;
+  private readonly runs: RunRepo;
 
-  constructor(registry: Registry, conversations: ConversationRepo, executor: Executor, bus: EventBus) {
+  constructor(
+    registry: Registry,
+    conversations: ConversationRepo,
+    executor: Executor,
+    bus: EventBus,
+    settings: SettingsRepo,
+    runs: RunRepo,
+  ) {
     this.registry = registry;
     this.conversations = conversations;
     this.executor = executor;
     this.bus = bus;
+    this.settings = settings;
+    this.runs = runs;
   }
 
-  async plan(input: ChatInput, history: ChatMessage[]): Promise<{ decision: RoutingDecision; messages: ChatMessage[] }> {
+  /** Stored budget, falling back to the unlimited default. */
+  async budgetConfig(): Promise<BudgetConfig> {
+    const raw = await this.settings.get<unknown>(BUDGET_SETTINGS_KEY);
+    if (raw === null) return DEFAULT_BUDGET;
+    const parsed = budgetConfigSchema.safeParse(raw);
+    // A malformed stored document must not take NYRO down, and must not
+    // silently become "no limit" either — fall back to the default and let the
+    // Settings UI show what is actually stored.
+    return parsed.success ? parsed.data : DEFAULT_BUDGET;
+  }
+
+  async plan(
+    input: ChatInput,
+    history: ChatMessage[],
+  ): Promise<{ decision: RoutingDecision; messages: ChatMessage[]; budget: BudgetVerdict }> {
     const models = await this.registry.routableModels();
+
+    // Budget is evaluated BEFORE routing, because its verdict changes what the
+    // router is allowed to consider — not after, when the money is spent.
+    const config = await this.budgetConfig();
+    const spend = await this.runs.spend();
+    const budget = evaluateBudget(config, spend, { privacy: input.privacy, mode: input.mode });
 
     const messages: ChatMessage[] = [];
     if (input.systemPrompt) messages.push({ role: "system", content: input.systemPrompt });
@@ -93,22 +137,33 @@ export class ChatService {
     messages.push({ role: "user", content: input.message });
 
     const estimatedInputTokens = estimateMessagesTokens(messages);
+
+    // force_local narrows the request rather than rejecting it: NYRO stays
+    // useful on free local models once the paid budget is gone (spec §184).
+    const effectivePrivacy = budget.action === "force_local" ? "local_only" : input.privacy;
+
+    // A per-request ceiling can come from the caller or the budget; the tighter
+    // of the two wins, so neither can be used to escape the other.
+    const ceilings = [input.maxCostUsd, budget.maxCostUsd].filter((v): v is number => v !== null && v !== undefined);
+    const maxCostUsd = ceilings.length > 0 ? Math.min(...ceilings) : null;
+
     const req: RoutingRequest = {
       mode: input.mode,
       requestedModelId: input.modelId,
       requestedProviderId: input.providerId,
+      excludedProviderIds: exhaustedProviders(config, spend),
       // "chat" is the one genuine requirement for a chat turn; everything the
       // keyword pass guessed is a preference.
       requiredCapabilities: [...new Set<Capability>(["chat", ...input.requiredCapabilities])],
       preferredCapabilities: inferPreferredCapabilities(input.message),
-      privacy: input.privacy,
+      privacy: effectivePrivacy,
       estimatedInputTokens,
       // Used only for cost ceilings and context headroom, never billed.
       estimatedOutputTokens: 800,
-      maxCostUsd: input.maxCostUsd,
+      maxCostUsd,
     };
 
-    return { decision: route(models, req), messages };
+    return { decision: route(models, req), messages, budget };
   }
 
   async send(
@@ -132,7 +187,15 @@ export class ChatService {
       .slice(-HISTORY_TURNS)
       .map((m) => ({ role: m.role, content: m.content }));
 
-    const { decision, messages } = await this.plan(input, history);
+    const { decision, messages, budget } = await this.plan(input, history);
+
+    if (budget.action === "block") {
+      throw new NyroError("cost_limit_exceeded", budget.message ?? "A spending limit has been reached.", {
+        component: "chat-service",
+      });
+    }
+    if (budget.message) callbacks.onBudget?.(budget);
+
     callbacks.onRouted?.(decision);
     this.bus.emit({
       type: "router.decided",

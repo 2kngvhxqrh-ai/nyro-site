@@ -7,7 +7,7 @@
 import { createHttpServer, type ServerDeps } from "./http/server.ts";
 import { createPool, type Pool } from "./db/pool.ts";
 import { runMigrations } from "./db/migrate.ts";
-import { ConversationRepo, ModelRepo, ProviderRepo, RunRepo } from "./db/repos.ts";
+import { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "./db/repos.ts";
 import { Registry } from "./core/registry.ts";
 import { Executor } from "./core/executor.ts";
 import { ChatService } from "./core/chat-service.ts";
@@ -35,14 +35,15 @@ export async function createApp(config: NyroConfig): Promise<NyroApp> {
   const models = new ModelRepo(pool);
   const conversations = new ConversationRepo(pool);
   const runs = new RunRepo(pool);
+  const settings = new SettingsRepo(pool);
 
   const registry = new Registry(providers, models, bus);
   const executor = new Executor(registry, runs, bus);
-  const chat = new ChatService(registry, conversations, executor, bus);
+  const chat = new ChatService(registry, conversations, executor, bus, settings, runs);
 
   await bootstrapProviders(providers, config);
 
-  const deps: ServerDeps = { config, pool, providers, models, conversations, runs, registry, chat, bus };
+  const deps: ServerDeps = { config, pool, providers, models, conversations, runs, settings, registry, chat, bus };
   const server = createHttpServer(deps);
 
   return {

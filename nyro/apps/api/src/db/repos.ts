@@ -527,6 +527,43 @@ export class RunRepo {
   }
 
   /**
+   * Money actually spent, by period and by provider.
+   *
+   * Uses date_trunc rather than a rolling window, so "daily" means the calendar
+   * day the user is living in — which is what a person means by a daily budget.
+   * Computed in Postgres so it stays correct as rows accumulate.
+   */
+  async spend(): Promise<{
+    dayUsd: number; weekUsd: number; monthUsd: number; perProviderMonthUsd: Record<string, number>;
+  }> {
+    try {
+      const totals = await this.pool.query<{ day: number; week: number; month: number }>(
+        `select
+           coalesce(sum(cost_usd) filter (where created_at >= date_trunc('day',   now())), 0) as day,
+           coalesce(sum(cost_usd) filter (where created_at >= date_trunc('week',  now())), 0) as week,
+           coalesce(sum(cost_usd) filter (where created_at >= date_trunc('month', now())), 0) as month
+         from model_runs`,
+      );
+      const perProvider = await this.pool.query<{ provider_id: string; cost: number }>(
+        `select provider_id, coalesce(sum(cost_usd), 0) as cost
+           from model_runs
+          where created_at >= date_trunc('month', now())
+          group by provider_id`,
+      );
+      const row = totals.rows[0]!;
+      const perProviderMonthUsd: Record<string, number> = {};
+      for (const r of perProvider.rows) perProviderMonthUsd[r.provider_id] = Number(r.cost);
+      return {
+        dayUsd: Number(row.day),
+        weekUsd: Number(row.week),
+        monthUsd: Number(row.month),
+        perProviderMonthUsd,
+      };
+    } catch (err) {
+      throw dbError(err, "computing spend");
+    }
+  }
+  /**
    * Aggregates for the Health / cost panels (spec §66, §71).
    *
    * A user pressing Stop is NOT a model failure. Counting it as one would
@@ -580,6 +617,47 @@ export class RunRepo {
       };
     } catch (err) {
       throw dbError(err, "computing run stats");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings (spec §64) — small typed key/value documents
+// ---------------------------------------------------------------------------
+
+/**
+ * A JSON document store for user configuration.
+ *
+ * Deliberately not a column-per-setting table: settings are read as whole
+ * documents by the code that owns them, and each owner validates its own shape
+ * with zod. Adding a setting is then a schema change in one file, not a
+ * migration.
+ */
+export class SettingsRepo {
+  private readonly pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
+
+  async get<T>(key: string): Promise<T | null> {
+    try {
+      const { rows } = await this.pool.query<{ value: T }>("select value from settings where key = $1", [key]);
+      return rows[0] ? rows[0].value : null;
+    } catch (err) {
+      throw dbError(err, `reading setting "${key}"`);
+    }
+  }
+
+  async set<T>(key: string, value: T): Promise<void> {
+    try {
+      await this.pool.query(
+        `insert into settings (key, value, updated_at) values ($1, $2, now())
+         on conflict (key) do update set value = excluded.value, updated_at = now()`,
+        [key, JSON.stringify(value)],
+      );
+    } catch (err) {
+      throw dbError(err, `saving setting "${key}"`);
     }
   }
 }

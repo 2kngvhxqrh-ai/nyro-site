@@ -132,6 +132,7 @@ SSE. Closing the connection cancels the upstream model call.
 
 | Event | Data |
 |---|---|
+| `budget` | a spending limit constrained this request (emitted before `routing`) |
 | `routing` | chosen model, fallbacks, rejected models with reasons |
 | `attempt` | `{modelId, attemptIndex, isFallback}` — emitted per attempt |
 | `delta` | `{text}` |
@@ -147,6 +148,48 @@ event, not an HTTP status.
 - `GET /api/conversations`
 - `POST /api/conversations` — `{ "title": "…" }`
 - `GET /api/conversations/:id/messages`
+
+## Budget (spec §66)
+
+### `GET /api/budget`
+Returns the configured limits, spend to date (day / week / month / per provider),
+what those limits are currently doing, and what remains.
+
+### `PUT /api/budget`
+```json
+{
+  "dailyUsd": 5,
+  "weeklyUsd": null,
+  "monthlyUsd": 50,
+  "perRequestUsd": 0.05,
+  "perProviderMonthlyUsd": { "openai": 10 },
+  "onExceeded": "local_only"
+}
+```
+`null` means no limit. A cap for an unknown provider id is rejected, so a typo
+cannot create a limit that silently never applies.
+
+`onExceeded` is `local_only` (keep working on free local models) or `block`
+(refuse until the limit is raised).
+
+### `DELETE /api/budget`
+Removes every limit.
+
+### How it is enforced
+The budget is evaluated **before** routing, and its verdict narrows what the
+router may consider:
+
+- A period cap that is used up either forces the request local or blocks it.
+- A provider whose own monthly cap is used up is excluded from routing; the
+  other providers keep working.
+- `perRequestUsd` becomes a routing ceiling. If the caller also sent
+  `maxCostUsd`, the tighter of the two applies.
+- A request marked `local_only` or `sensitive`, or sent with `mode:local_only`,
+  is **never** blocked by a spending limit — it costs nothing to run.
+
+When a limit constrains a request, `/api/chat` includes a `budget` object and
+`/api/chat/stream` emits a `budget` event before `routing`. A blocked request
+fails with `cost_limit_exceeded`.
 
 ## Stats
 

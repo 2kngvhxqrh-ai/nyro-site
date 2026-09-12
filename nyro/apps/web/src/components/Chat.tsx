@@ -20,6 +20,8 @@ type Turn =
       decision: Decision | null;
       attempts: Array<{ modelId: string; isFallback: boolean }>;
       usage: { inputTokens: number; outputTokens: number; costUsd: number } | null;
+      /** Set when a spending limit constrained this request (spec §66). */
+      budget: { message: string | null; action: string } | null;
       latencyMs: number | null;
       error: ApiError | null;
       streaming: boolean;
@@ -89,7 +91,7 @@ export function Chat({
     setTurns((prev) => [
       ...prev,
       { kind: "user", text: message },
-      { kind: "assistant", text: "", decision: null, attempts: [], usage: null, latencyMs: null, error: null, streaming: true },
+      { kind: "assistant", text: "", decision: null, attempts: [], usage: null, budget: null, latencyMs: null, error: null, streaming: true },
     ]);
 
     const ac = new AbortController();
@@ -104,6 +106,7 @@ export function Chat({
         modelId: pinnedModel === "" ? null : pinnedModel,
       },
       {
+        onBudget: (b) => patchLast((t) => { t.budget = b; }),
         onRouting: (d) => patchLast((t) => { t.decision = d; }),
         onAttempt: (a) => patchLast((t) => { t.attempts = [...t.attempts, a]; }),
         onDelta: (text) => patchLast((t) => { t.text += text; }),
@@ -255,6 +258,10 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
           </span>
         ) : null}
       </div>
+
+      {turn.budget?.message ? (
+        <p className="prose-sans border-b border-line px-4 py-2 text-[11.5px] text-wait">{turn.budget.message}</p>
+      ) : null}
 
       {usedFallback ? (
         <p className="border-b border-line px-4 py-2 text-[11px] text-wait">

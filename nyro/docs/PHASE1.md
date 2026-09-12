@@ -34,13 +34,14 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-103 automated tests, run repeatedly with no flakes.
+134 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
 | `router.test.ts` | 24 | privacy constraints, modes, overrides, determinism, hard vs soft capabilities |
 | `providers.test.ts` | 21 | all three wire protocols against real HTTP servers, chunk boundaries, error mapping, cross-transport cancellation |
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
+| `budget.test.ts` | 22 | spending limits: period caps, per-provider caps, and the cases where a budget must NOT fire |
 | `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
 | `e2e.test.ts` | 23 | full stack on real Postgres: discovery, chat, streaming, fallback, cancellation accounting, restart persistence |
 
@@ -123,8 +124,8 @@ In dependency order:
    Replace heuristic speed scores with measured ones first; they are the least
    defensible numbers in the system.
 3. **Native Gemini adapter**, proving a third wire format.
-4. **Budget enforcement** (§66) — per-request ceilings exist; daily and monthly
-   caps do not.
+4. ~~**Budget enforcement** (§66)~~ — **done.** Daily, weekly, monthly,
+   per-request and per-provider caps, enforced before a model is called.
 5. **Model editing in the UI** — the registry supports `traits_source = 'user'`
    and discovery already preserves it; there is no UI for it yet.
 

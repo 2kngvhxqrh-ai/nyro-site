@@ -69,7 +69,7 @@ Stated plainly, because a security section that only lists wins is misleading.
 | **No authentication** | Anyone who can reach the port can use NYRO and manage providers. Bind to `127.0.0.1`. Do not expose it. | Auth arrives with multi-user (§92) |
 | **No rate limiting** | A runaway client can exhaust a provider quota | §69 |
 | **No audit log** | Provider and model changes are not recorded | §70 |
-| **No budget enforcement** | `maxCostUsd` is per-request only; there is no daily or monthly cap | §66 |
+
 | **No approval engine** | Nothing needs approval yet because no tool can act on the world | §36 |
 | **No sandboxing** | Nothing executes code yet | §40 |
 | **Key rotation is manual** | Changing `NYRO_SECRET_KEY` invalidates stored keys; they must be re-entered | — |
