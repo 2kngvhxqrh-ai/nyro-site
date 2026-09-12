@@ -13,7 +13,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (82 tests) and was
+Everything in this list is covered by the test suite (101 tests) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -28,6 +28,8 @@ verified running against a real Postgres and a real browser.
 | Stop button that genuinely cancels the upstream model call | working, tested |
 | Conversation persistence and history | working |
 | Health checks per component; per-model run/latency/cost stats | working |
+| Single-process mode: the API serves the built UI on one origin | working |
+| Static serving that refuses path traversal | working, tested |
 
 ## What is deliberately NOT here
 

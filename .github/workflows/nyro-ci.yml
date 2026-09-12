@@ -1,0 +1,96 @@
+# CI for the NYRO system under nyro/.
+#
+# Exists so the test claims in the README and PR descriptions are verifiable by
+# someone other than the person who wrote them. It runs the same commands a
+# contributor runs locally — no CI-only shortcuts, no skipped suites — against
+# a real Postgres, because the e2e and static suites are only meaningful
+# against a real database and a real socket.
+name: NYRO CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["nyro/**", ".github/workflows/nyro-ci.yml"]
+  pull_request:
+    paths: ["nyro/**", ".github/workflows/nyro-ci.yml"]
+  # Lets a failure be re-run without an empty commit.
+  workflow_dispatch:
+
+concurrency:
+  group: nyro-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: nyro
+
+jobs:
+  verify:
+    name: typecheck · build · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nyro
+          POSTGRES_PASSWORD: nyro
+          POSTGRES_DB: nyro_test
+        ports: ["5432:5432"]
+        # Without this the test step can start before Postgres accepts
+        # connections, which looks like a flaky test and is not one.
+        options: >-
+          --health-cmd "pg_isready -U nyro -d nyro_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://nyro:nyro@localhost:5432/nyro_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # Must stay >=22: the API uses node:test and native TS type stripping.
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: nyro/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Build browser demo
+        run: pnpm --filter @nyro/web build:demo
+
+      - name: Test
+        run: pnpm test
+
+      - name: Verify the demo bundles the real router, not a copy
+        # The demo's value rests entirely on it running the same code as the
+        # server. If someone replaces the bundled import with a local
+        # reimplementation, the demo silently starts lying and this catches it.
+        run: |
+          set -e
+          needle='request is local-only and this model is not local'
+          if ! grep -rqF "$needle" apps/web/dist-demo/; then
+            echo "::error::The demo bundle no longer contains the real router's privacy rule."
+            echo "The demo must import core/router.ts, not reimplement it."
+            exit 1
+          fi
+          echo "Demo bundle contains the real router."
