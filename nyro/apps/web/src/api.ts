@@ -76,7 +76,7 @@ export interface RoutingChoice {
 export interface Decision {
   mode: string;
   chosen: RoutingChoice | null;
-  fallbacks: Array<{ modelId: string; displayName: string }>;
+  fallbacks: Array<{ modelId: string; displayName: string; providerId: string; local: boolean }>;
   rejected: Array<{ modelId: string; reason: string }>;
 }
 

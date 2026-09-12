@@ -117,6 +117,31 @@ shaping, stream framing, usage parsing, error mapping and cancellation, but
 does **not** prove that OpenAI or Anthropic behave as documented. Only a live
 API key does that. Use **Test connection** in the Models UI for that check.
 
+## Browser demo mode (no server)
+
+```bash
+pnpm --filter @nyro/web build:demo     # output in apps/web/dist-demo
+```
+
+Builds the UI with an in-browser core replacing the API, so the app runs with
+no server, no database and no provider. The React app is **unchanged** — it
+still only talks to `/api/*`, which is the point: if it needed special-casing
+for this, the frontend would hold provider knowledge it should not have.
+
+Real in demo mode: the router, privacy enforcement, the fallback chain, cost
+and token estimates and model traits — the actual modules from `apps/api/src`,
+bundled, not reimplemented. Simulated: reply text (nothing is inferred), the
+model registry (a browser cannot reach a provider), and storage (memory only).
+
+Every simulated reply is prefixed `[simulated — no model was called]`, and a
+non-dismissible banner says so. `apps/web/artifact.html` is the page shell used
+when publishing the build as a hosted page; the build emits it alongside the
+assets.
+
+The flag is `VITE_NYRO_DEMO`, defined literally in both vite configs so the
+demo code is dropped from the production bundle at build time rather than
+shipped as chunks the real app never loads.
+
 ## Troubleshooting
 
 **`NYRO_SECRET_KEY is not set`** — step 2. It is required; NYRO will not start

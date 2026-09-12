@@ -8,6 +8,18 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0c0b'/><rect x='3' y='7' width='2' height='6' fill='%23d8a94a'/><rect x='7' y='4' width='2' height='9' fill='%23d8a94a'/><rect x='11' y='9' width='2' height='4' fill='%23d8a94a'/></svg>"
     />
+    <!--
+      IBM Plex Mono is the face the NYRO identity already uses (see the
+      nyro-site page). It was declared in index.css but never loaded, so the UI
+      was silently falling back to ui-monospace. Plex Sans carries explanatory
+      prose, where a monospace face hurts reading speed.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
+    />
     <title>NYRO</title>
   </head>
   <body class="h-full">

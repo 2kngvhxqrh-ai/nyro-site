@@ -4,6 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Folds DEMO_MODE to false so the browser-demo code is dropped at build time
+  // rather than shipped as chunks the real app never loads.
+  define: { "import.meta.env.VITE_NYRO_DEMO": JSON.stringify("false") },
   server: {
     port: 5173,
     // The browser only ever talks to the NYRO API. It has no provider URLs,

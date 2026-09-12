@@ -12,6 +12,9 @@ import { Chat } from "./components/Chat.tsx";
 import { Models } from "./components/Models.tsx";
 import { Health } from "./components/Health.tsx";
 import { Dot } from "./components/ui.tsx";
+import { DemoBanner } from "./components/DemoBanner.tsx";
+import type { Turn } from "./components/Chat.tsx";
+import { DEMO_MODE } from "./demo-mode.ts";
 
 type View = "chat" | "models" | "health";
 
@@ -28,6 +31,13 @@ export function App() {
   const [health, setHealth] = useState<HealthReport | null>(null);
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.stats>> | null>(null);
   const [offline, setOffline] = useState(false);
+  const [seedTurns, setSeedTurns] = useState<Turn[]>([]);
+
+  useEffect(() => {
+    if (!DEMO_MODE) return;
+    // Loaded lazily so the demo seed never ships in the real app's bundle.
+    void import("./demo/seed-conversation.ts").then((m) => setSeedTurns(m.seedConversation()));
+  }, []);
 
   const refreshRegistry = useCallback(async () => {
     try {
@@ -61,11 +71,16 @@ export function App() {
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col px-4 py-4">
-      <header className="mb-4 flex items-center gap-4 border-b border-line pb-3">
+      <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3">
         <span className="text-lg font-semibold tracking-tight text-ink">NYRO</span>
-        <span className="rounded border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim">
+        <span className="whitespace-nowrap rounded border border-line px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-dim">
           Phase 1
         </span>
+        {DEMO_MODE ? (
+          <span className="rounded border border-wait/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-wait">
+            Demo
+          </span>
+        ) : null}
 
         <nav className="flex gap-1">
           {VIEWS.map((v) => (
@@ -81,7 +96,7 @@ export function App() {
           ))}
         </nav>
 
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-dim">
+        <span className="order-last flex w-full items-center gap-2 text-[11px] text-dim sm:order-none sm:ml-auto sm:w-auto">
           {offline ? (
             <>
               <Dot state="unreachable" /> API unreachable
@@ -98,9 +113,19 @@ export function App() {
         </span>
       </header>
 
+      {/* Outside the scroll container: a page that simulates replies must say
+          so at all times, not only until the reader scrolls past it. Capped
+          on small screens so it cannot swallow the whole viewport — it
+          scrolls within itself instead of pushing the app off the page. */}
+      {DEMO_MODE ? (
+        <div className="mb-4 max-h-[40vh] shrink-0 overflow-y-auto sm:max-h-none sm:overflow-visible">
+          <DemoBanner />
+        </div>
+      ) : null}
+
       <main className="min-h-0 flex-1 overflow-y-auto">
         {view === "chat" ? (
-          <Chat models={models} onActivity={() => void refreshHealth(false)} />
+          <Chat models={models} onActivity={() => void refreshHealth(false)} initialTurns={seedTurns} />
         ) : view === "models" ? (
           <Models providers={providers} models={models} refresh={refreshRegistry} />
         ) : (

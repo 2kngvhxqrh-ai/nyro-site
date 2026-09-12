@@ -27,8 +27,30 @@ type Turn =
 
 const MODES = ["auto", "cheapest", "fastest", "best", "local_only", "cloud_only"] as const;
 
-export function Chat({ models, onActivity }: { models: Model[]; onActivity: () => void }) {
-  const [turns, setTurns] = useState<Turn[]>([]);
+export function Chat({
+  models,
+  onActivity,
+  initialTurns = [],
+}: {
+  models: Model[];
+  onActivity: () => void;
+  /**
+   * Seeds the transcript so the page opens showing what it does rather than an
+   * empty box. Used only by the browser demo; the real app starts empty
+   * because a real conversation should not begin with content nobody sent.
+   */
+  initialTurns?: Turn[];
+}) {
+  const [turns, setTurns] = useState<Turn[]>(initialTurns);
+
+  // initialTurns can arrive after first render (the demo seed is imported
+  // lazily), and useState only reads its argument once. Adopt it when it
+  // shows up, but never clobber a conversation the user has already started.
+  useEffect(() => {
+    if (initialTurns.length > 0) {
+      setTurns((prev) => (prev.length === 0 ? initialTurns : prev));
+    }
+  }, [initialTurns]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<string>("auto");
   const [pinnedModel, setPinnedModel] = useState<string>("");
@@ -199,7 +221,17 @@ export function Chat({ models, onActivity }: { models: Model[]; onActivity: () =
 function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> }) {
   const chosen = turn.decision?.chosen;
   const usedFallback = turn.attempts.some((a) => a.isFallback);
-  const actualModel = turn.attempts.at(-1)?.modelId ?? chosen?.modelId ?? null;
+  const actualModelId = turn.attempts.at(-1)?.modelId ?? chosen?.modelId ?? null;
+
+  /*
+   * Label the turn by the model that ACTUALLY ran. After a fallback the first
+   * choice is not what answered, and showing its provider badge would
+   * misattribute the response — the one thing a routing UI must never do.
+   */
+  const ran =
+    chosen && actualModelId === chosen.modelId
+      ? chosen
+      : turn.decision?.fallbacks.find((f) => f.modelId === actualModelId) ?? null;
 
   return (
     <div className="rounded border border-line bg-panel">
@@ -207,8 +239,10 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
         <Dot state={turn.error ? "unreachable" : turn.streaming ? "degraded" : "healthy"} />
         {chosen ? (
           <>
-            <span className="text-xs text-ink">{actualModel === chosen.modelId ? chosen.displayName : actualModel}</span>
-            {chosen.local ? <Badge tone="live">local</Badge> : <Badge>{chosen.providerId}</Badge>}
+            <span className="text-xs text-ink">{ran?.displayName ?? actualModelId}</span>
+            {ran ? (
+              ran.local ? <Badge tone="live">local</Badge> : <Badge>{ran.providerId}</Badge>
+            ) : null}
             <Badge tone="accent">{turn.decision?.mode}</Badge>
           </>
         ) : (
@@ -224,7 +258,7 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
 
       {usedFallback ? (
         <p className="border-b border-line px-4 py-2 text-[11px] text-wait">
-          The first model failed. NYRO fell back to {actualModel}. Attempts:{" "}
+          The first model failed. NYRO fell back to {ran?.displayName ?? actualModelId}. Attempts:{" "}
           {turn.attempts.map((a) => a.modelId).join(" → ")}
         </p>
       ) : null}
@@ -266,3 +300,4 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
 }
 
 export { api };
+export type { Turn };

@@ -334,9 +334,13 @@ function serializeDecision(decision: {
           reasons: decision.candidates[0].reasons,
         }
       : null,
+    // providerId/local are included so the UI can label a turn by the model
+    // that ACTUALLY ran after a fallback, rather than the one first chosen.
     fallbacks: decision.candidates.slice(1, 3).map((c) => ({
       modelId: c.model.id,
       displayName: c.model.displayName,
+      providerId: c.model.providerId,
+      local: c.model.local,
     })),
     rejected: decision.rejected,
   };

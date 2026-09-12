@@ -13,6 +13,7 @@
   --color-wait: #d3a44c;
   --color-stop: #c87f73;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 html, body, #root { height: 100%; }
@@ -26,3 +27,14 @@ body {
 
 /* Streaming output should not reflow the page as tokens arrive. */
 .stream-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Explanatory prose reads faster in a proportional face; the instrument panel
+   itself stays monospace, where column alignment carries meaning. */
+.prose-sans { font-family: var(--font-sans); }
+
+/* Numbers that sit in columns should line up. */
+table, .tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
