@@ -35,6 +35,26 @@ receives no CORS header.
 ### SQL
 Parameterised queries throughout. No string interpolation of user input.
 
+### Static file serving
+When the API serves the built UI (`NYRO_STATIC_DIR`), every request path is
+resolved against the root and anything escaping it is refused. This is not
+cosmetic: `.env` holds the master key that decrypts every provider API key, so
+a static server that can be walked out of with `../` is a credential
+disclosure.
+
+Covered by 21 tests in `apps/api/test/static.test.ts`: encoded traversal
+(`%2e%2e`, `..%2f`, `....//`), NUL bytes, malformed percent-encoding, and a
+sibling directory sharing the root's name prefix — the case that defeats a
+naive `startsWith` check. Traversal attempts return exactly what an ordinary
+miss returns, so they cannot be distinguished or probed. `/api/*` is never
+served from disk.
+
+Containment is checked twice, because the two checks catch different things.
+The string-level check handles `../`; a second check resolves symlinks and
+re-verifies, because a symlink *inside* the root pointing outward contains no
+`../` and would otherwise pass. Both the file and directory symlink cases are
+tested, and the tests were confirmed to fail when the check is removed.
+
 ### Privacy routing
 A request marked `local_only` or `sensitive` cannot reach a cloud model —
 including via fallback, and including when the user explicitly names a cloud
@@ -53,6 +73,13 @@ Stated plainly, because a security section that only lists wins is misleading.
 | **No approval engine** | Nothing needs approval yet because no tool can act on the world | §36 |
 | **No sandboxing** | Nothing executes code yet | §40 |
 | **Key rotation is manual** | Changing `NYRO_SECRET_KEY` invalidates stored keys; they must be re-entered | — |
+
+## What CI verifies
+
+The claims above are checked on every push and pull request by
+`.github/workflows/nyro-ci.yml`, against a real Postgres — not only on a
+developer's machine. That includes the encryption, redaction and traversal
+suites. A reviewer does not have to take the author's word for them.
 
 ## Operational notes
 

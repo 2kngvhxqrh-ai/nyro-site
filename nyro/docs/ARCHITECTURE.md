@@ -88,6 +88,17 @@ A cancellation is recorded separately from a failure — counting a user pressin
 Stop as a model failure would misreport provider reliability and, once the
 router learns from history, would teach it to avoid a perfectly good model.
 
+### The API serves the UI in production, Vite serves it in development
+
+With `NYRO_STATIC_DIR` set, the API serves the built web app itself. That makes
+NYRO one process on one origin, which removes the dev proxy and removes CORS
+from the picture entirely — `/api` requests are same-origin by construction
+rather than by configuration, so there is no allow-list to get wrong in
+production.
+
+`pnpm dev` keeps Vite on :5173 with hot reload, proxying `/api`; that is the
+only configuration where CORS applies at all.
+
 ### No Express, no ORM, no Redis, no vector DB
 
 Each was considered and rejected for Phase 1 (spec §74, §116, §186):

@@ -7,7 +7,7 @@
  */
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer, type Server } from "node:http";
@@ -29,6 +29,11 @@ before(async () => {
   await writeFile(join(rootDir, "assets", "app.css"), "body{}");
   // A secret OUTSIDE the served root — exactly what traversal would target.
   await writeFile(join(parentDir, ".env"), "NYRO_SECRET_KEY=super-secret-value");
+
+  // A symlink INSIDE the root pointing outward. Its path contains no "..", so
+  // string-level resolution accepts it; only resolving the link catches it.
+  await symlink(join(parentDir, ".env"), join(rootDir, "leak.env"));
+  await symlink(parentDir, join(rootDir, "escape"));
 
   server = createServer((req, res) => {
     void serveStatic(rootDir, new URL(req.url ?? "/", "http://x").pathname, res).then((r) => {
@@ -91,6 +96,21 @@ describe("path traversal is refused", () => {
     // "/tmp/x/public-secrets" must not pass a naive startsWith("/tmp/x/public").
     const sneaky = resolveWithinRoot(rootDir, "/../public-secrets/key.txt");
     assert.ok(sneaky === null || sneaky.startsWith(resolve(rootDir) + "/"));
+  });
+});
+
+describe("symlinks cannot escape the root", () => {
+  test("a symlinked file pointing outside the root is not served", async () => {
+    const res = await fetch(`${baseUrl}/leak.env`);
+    const body = await res.text();
+    assert.ok(!body.includes("super-secret-value"), "a symlink leaked .env contents");
+    assert.equal(res.status, 404);
+  });
+
+  test("a symlinked directory pointing outside the root is not traversable", async () => {
+    const res = await fetch(`${baseUrl}/escape/.env`);
+    const body = await res.text();
+    assert.ok(!body.includes("super-secret-value"), "a symlinked directory leaked .env contents");
   });
 });
 

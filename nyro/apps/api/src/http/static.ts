@@ -10,7 +10,7 @@
  * "../" hands over the entire filesystem, including .env.
  */
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { ServerResponse } from "node:http";
 
@@ -59,6 +59,27 @@ export function resolveWithinRoot(root: string, urlPath: string): string | null 
   return candidate;
 }
 
+/**
+ * Second containment check, after symlinks are resolved.
+ *
+ * `resolveWithinRoot` works on the path string, which is enough for "../" but
+ * not for a symlink *inside* the root pointing outward — that path never
+ * contains "..", so string resolution accepts it. NYRO_STATIC_DIR is
+ * user-configurable, so the served directory is not guaranteed to be a
+ * symlink-free build output.
+ *
+ * Returns false when the file does not exist; the caller treats that as a miss.
+ */
+async function isRealPathWithinRoot(root: string, candidate: string): Promise<boolean> {
+  try {
+    // The root may itself sit under a symlink (/tmp on macOS), so resolve both.
+    const [realRoot, realCandidate] = await Promise.all([realpath(root), realpath(candidate)]);
+    return realCandidate === realRoot || realCandidate.startsWith(realRoot + sep);
+  } catch {
+    return false;
+  }
+}
+
 async function sendFile(res: ServerResponse, filePath: string, status = 200): Promise<boolean> {
   let info;
   try {
@@ -100,12 +121,16 @@ export async function serveStatic(root: string, urlPath: string, res: ServerResp
     return { served: true };
   }
 
-  if (await sendFile(res, direct)) return { served: true };
+  if ((await isRealPathWithinRoot(root, direct)) && (await sendFile(res, direct))) {
+    return { served: true };
+  }
 
   // SPA fallback for a path with no file extension (a client-side route).
   if (extname(urlPath) === "") {
     const index = resolveWithinRoot(root, "/index.html");
-    if (index && (await sendFile(res, index))) return { served: true };
+    if (index && (await isRealPathWithinRoot(root, index)) && (await sendFile(res, index))) {
+      return { served: true };
+    }
   }
 
   return { served: false };

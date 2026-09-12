@@ -6,6 +6,11 @@ which returns `text/event-stream`.
 No authentication yet — see [SECURITY.md](SECURITY.md). Bind to `127.0.0.1`
 (the default) and do not expose this port.
 
+When `NYRO_STATIC_DIR` is set (as `pnpm start` does), any non-`/api` GET is
+served from the built web app instead, with an SPA fallback for extensionless
+paths. An unmatched `/api` path is always a JSON 404 and is never served from
+disk.
+
 ## Errors
 
 Every failure returns the same shape and an appropriate status code:

@@ -34,14 +34,14 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-101 automated tests, run repeatedly with no flakes.
+103 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
 | `router.test.ts` | 24 | privacy constraints, modes, overrides, determinism, hard vs soft capabilities |
 | `providers.test.ts` | 21 | all three wire protocols against real HTTP servers, chunk boundaries, error mapping, cross-transport cancellation |
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
-| `static.test.ts` | 19 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
+| `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
 | `e2e.test.ts` | 23 | full stack on real Postgres: discovery, chat, streaming, fallback, cancellation accounting, restart persistence |
 
 Additionally verified by hand against a running system:
@@ -84,6 +84,17 @@ recording, because each was a design error rather than a typo.
 4. **User cancellations were counted as model failures**, which would misreport
    provider reliability and eventually teach the router to avoid a healthy
    model. Now counted separately and excluded from latency averages.
+
+5. **A turn was attributed to the wrong model after a fallback.** The header
+   showed the provider of the model first *chosen*, not the one that answered —
+   `gpt-4o` labelled `ANTHROPIC`. Misattributing which model produced a
+   response is close to the worst bug a routing UI can have. Found by looking
+   at a screenshot, not by a test.
+
+6. **A top-level `await` broke the production build.** It was introduced for
+   the browser demo, whose build targets es2022 and so hid it. Caught only by
+   re-running the normal build — a reminder that verifying the path you just
+   changed is not the same as verifying the ones you did not.
 
 ## Deviations from the spec, and why
 
