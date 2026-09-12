@@ -113,6 +113,22 @@ pnpm typecheck
 pnpm build
 ```
 
+### Proving it works against the real vendors
+
+```bash
+pnpm smoke            # every enabled provider
+pnpm smoke -- ollama  # just one
+```
+
+This is the one check the test suite cannot do for you. It uses the providers
+and API keys you have configured, lists their models, and sends one ~16-token
+completion to each provider's cheapest registered model. It prints what it is
+about to do before spending anything, never prints a key, and exits non-zero if
+any provider fails.
+
+It is not in `pnpm test` and not in CI, because it needs your real credentials
+and spends your real money.
+
 **What the tests do and do not prove.** They run against a real Postgres, a
 real HTTP listener and real sockets. The upstream model servers are local
 servers speaking each vendor's genuine wire protocol — which proves request

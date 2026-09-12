@@ -59,9 +59,12 @@ Additionally verified by hand against a running system:
 
 The upstream model servers in the tests are local servers speaking each
 vendor's real wire protocol. That proves our adapters. It does not prove that
-OpenAI or Anthropic behave as documented — only a live key does, via **Test
-connection** in the UI. Nothing here was run against a live Ollama either; the
-Ollama adapter was verified against a server speaking Ollama's native protocol.
+OpenAI or Anthropic behave as documented, and nothing here was run against a
+live Ollama either.
+
+That gap is now closable rather than merely acknowledged: `pnpm smoke` runs the
+real adapters against the user's own providers and keys. It is deliberately not
+in CI, because CI has neither.
 
 ## Bugs found by testing, and fixed
 
@@ -120,8 +123,9 @@ the fake completeness §175 rules out.
 
 In dependency order:
 
-1. **A live-provider smoke test.** The only remaining unknown is real vendor
-   behaviour. One opt-in script, run with real keys, closes it.
+1. ~~**A live-provider smoke test.**~~ — **done.** `pnpm smoke` runs the real
+   adapters against the user's own configured providers and keys. It is the one
+   check CI cannot do, so it is opt-in rather than automated.
 2. ~~**Router learning from `model_runs`** (§102)~~ — **done.** Speed is now
    measured from real runs (median output tokens per second) once a model has
    enough of them. Reasoning and coding scores remain heuristics.

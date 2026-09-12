@@ -14,6 +14,7 @@
     "test": "pnpm --filter @nyro/api test",
     "migrate": "pnpm --filter @nyro/api migrate",
     "setup": "node scripts/setup.mjs",
-    "start": "node scripts/start.mjs"
+    "start": "node scripts/start.mjs",
+    "smoke": "pnpm --filter @nyro/api smoke"
   }
 }

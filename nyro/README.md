@@ -70,7 +70,9 @@ built UI, so it is one process on one origin.
 Set `OLLAMA_BASE_URL` in `.env` (or add a provider in the UI) to connect a model.
 
 For development with hot reload, `pnpm dev` instead runs Vite on :5173 with the
-API on :8787. Full detail in [`docs/SETUP.md`](docs/SETUP.md).
+API on :8787. `pnpm smoke` checks your real providers against the real vendors —
+the one thing the test suite cannot do for you. Full detail in
+[`docs/SETUP.md`](docs/SETUP.md).
 
 ## Layout
 

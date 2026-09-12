@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "node --env-file-if-exists=../../.env --experimental-strip-types src/db/migrate-cli.ts",
-    "test": "node --experimental-strip-types --test --test-concurrency=1 test/*.test.ts"
+    "test": "node --experimental-strip-types --test --test-concurrency=1 test/*.test.ts",
+    "smoke": "node --env-file-if-exists=../../.env --experimental-strip-types src/smoke.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",
