@@ -74,6 +74,14 @@ Stated plainly, because a security section that only lists wins is misleading.
 | **No sandboxing** | Nothing executes code yet | §40 |
 | **Key rotation is manual** | Changing `NYRO_SECRET_KEY` invalidates stored keys; they must be re-entered | — |
 
+### Export
+`GET /api/export` produces a file that will end up in cloud storage, an email,
+or a git repo. It contains **no API keys**: providers are exported through
+`listPublic()`, the key-free shape, so a future field addition cannot leak one
+by accident. The file states this about itself, and three tests assert it
+against a real stored key — checking the literal value, an `apiKey` field, and
+anything key-shaped.
+
 ## What CI verifies
 
 The claims above are checked on every push and pull request by

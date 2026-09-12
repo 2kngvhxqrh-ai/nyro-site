@@ -314,6 +314,12 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
   }
 
+  if (path.startsWith("/api/export")) {
+    // The demo has no database and the artifact sandbox blocks downloads
+    // anyway, so it says so rather than producing an empty file.
+    return errorResponse(409, "config_error", "Export needs the real NYRO API and your own database.");
+  }
+
   if (path === "/api/performance" && method === "GET") {
     // The demo's runs are simulated, so it reports no measurements rather than
     // presenting made-up throughput figures as observations.

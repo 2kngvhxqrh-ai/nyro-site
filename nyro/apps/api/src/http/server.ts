@@ -17,6 +17,7 @@ import type { ChatService } from "../core/chat-service.ts";
 import { BUDGET_SETTINGS_KEY, LEARNING_SETTINGS_KEY, ROUTING_RULES_SETTINGS_KEY } from "../core/chat-service.ts";
 import { routingRulesSchema, validateRuleTargets } from "../core/routing-rules.ts";
 import { adjustmentFor, MIN_SAMPLES } from "../core/performance.ts";
+import { buildExport, toMarkdown } from "../core/export.ts";
 import { budgetConfigSchema, evaluateBudget, DEFAULT_BUDGET } from "../core/budget.ts";
 import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
 import type { Pool } from "../db/pool.ts";
@@ -399,6 +400,25 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     const body = parseOr400(z.object({ enabled: z.boolean() }), await readJsonBody(ctx.req));
     await deps.settings.set(LEARNING_SETTINGS_KEY, body);
     sendJson(ctx.res, 200, body);
+  });
+
+  // ---- Export (spec §108, §109) -------------------------------------------
+  r.get("/api/export", async (ctx) => {
+    const bundle = await buildExport(deps);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const markdown = ctx.query.get("format") === "markdown";
+
+    const body = markdown ? toMarkdown(bundle) : JSON.stringify(bundle, null, 2);
+    const filename = markdown ? `nyro-conversations-${stamp}.md` : `nyro-export-${stamp}.json`;
+
+    ctx.res.writeHead(200, {
+      "content-type": markdown ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
+      "content-length": Buffer.byteLength(body),
+      // Makes the browser save it rather than render it.
+      "content-disposition": `attachment; filename="${filename}"`,
+      "cache-control": "no-store",
+    });
+    ctx.res.end(body);
   });
 
   // ---- Stats --------------------------------------------------------------

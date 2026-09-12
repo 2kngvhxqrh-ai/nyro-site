@@ -153,6 +153,8 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
         </div>
       </Panel>
 
+      <ExportPanel />
+
       <MeasuredRoutingPanel />
 
       <RoutingRulesPanel providers={providers} models={models} />
@@ -195,6 +197,50 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
         )}
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Export (spec §108, §109).
+ *
+ * The public Nyro page states the constraint this project is built around:
+ * you should be able to read everything the system knows in a text editor,
+ * with nothing running. A Postgres database is the opposite of that, so export
+ * is what makes the promise true rather than aspirational.
+ *
+ * Plain links rather than fetch-and-blob: the API sets Content-Disposition, so
+ * the browser saves the file with the right name and nothing has to be held in
+ * memory. A large history would be a bad thing to buffer twice.
+ */
+function ExportPanel() {
+  return (
+    <Panel title="Your data">
+      <p className="prose-sans text-[11.5px] leading-relaxed text-dim">
+        Everything NYRO knows, in a file you own. Conversations, providers, models, settings and usage
+        totals. <span className="text-ink">No API keys are included</span> — they stay encrypted in the
+        database and must be re-entered after a restore, which is stated inside the file too.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href="/api/export"
+          download
+          className="rounded border border-accent bg-accent/15 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/25"
+        >
+          Download JSON
+        </a>
+        <a
+          href="/api/export?format=markdown"
+          download
+          className="rounded border border-line px-3 py-1.5 text-xs text-body transition hover:border-dim hover:text-ink"
+        >
+          Download conversations as Markdown
+        </a>
+      </div>
+      <p className="prose-sans mt-2 text-[11.5px] leading-relaxed text-dim">
+        The JSON is for backup and migration. The Markdown is your conversations as prose — readable in any
+        text editor, with NYRO not running.
+      </p>
+    </Panel>
   );
 }
 

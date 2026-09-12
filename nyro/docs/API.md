@@ -153,6 +153,19 @@ event, not an HTTP status.
   rewrites your spend or the performance measurements derived from it.
 - `GET /api/conversations/:id/messages`
 
+## Export (spec §108, §109)
+
+### `GET /api/export`
+Everything NYRO stores: conversations with messages, providers, models,
+settings and usage totals. Sent as a download with a dated filename.
+
+`?format=markdown` returns the conversations as prose instead — readable in any
+text editor with NYRO not running, which is the constraint the project is built
+around.
+
+**Neither format contains an API key.** Providers carry `requiresApiKey` so a
+restore knows a credential is needed, without carrying one.
+
 ## Measured performance (spec §13, §102)
 
 ### `GET /api/performance`

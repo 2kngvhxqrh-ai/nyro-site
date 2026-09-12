@@ -34,7 +34,7 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-190 automated tests, run repeatedly with no flakes.
+202 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
@@ -43,6 +43,7 @@ working Stop button, provider/model management, health and run statistics.
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
 | `performance.test.ts` | 19 | measured throughput overrides guessed speed, but only with enough evidence |
 | `routing-rules.test.ts` | 20 | rules steer routing, and can never beat privacy, budget or availability |
+| `export.test.ts` | 6 | markdown rendering and the versioned bundle shape |
 | `budget.test.ts` | 22 | spending limits: period caps, per-provider caps, and the cases where a budget must NOT fire |
 | `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |
 | `e2e.test.ts` | 23 | full stack on real Postgres: discovery, chat, streaming, fallback, cancellation accounting, restart persistence |

@@ -616,6 +616,77 @@ describe("conversation history", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("export (spec §108, §109)", () => {
+  test("the JSON export contains NO API key, with a real key stored", async () => {
+    // The openai provider in this suite was created with a real-looking key.
+    // If it ever reaches the export, every protection in crypto.ts is undone
+    // the moment the user emails themselves a backup.
+    const res = await api("/api/export");
+    assert.equal(res.status, 200);
+    const raw = await res.text();
+    assert.ok(!raw.includes("sk-test-abcdefghijklmnop"), "an API key leaked into the export");
+    assert.ok(!/"apiKey"/.test(raw), "the export has an apiKey field");
+    assert.ok(!/sk-[A-Za-z0-9]{12,}/.test(raw), "something key-shaped is in the export");
+  });
+
+  test("it records that a provider needs a key, without carrying one", async () => {
+    const bundle = (await (await api("/api/export")).json()) as {
+      providers: Array<{ id: string; requiresApiKey: boolean; baseUrl: string }>;
+    };
+    const openai = bundle.providers.find((p) => p.id === "openai");
+    assert.ok(openai, "the provider is missing from the export");
+    assert.equal(openai!.requiresApiKey, true);
+    assert.ok(openai!.baseUrl.length > 0);
+  });
+
+  test("it includes conversations with their messages", async () => {
+    const created = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "export me please", mode: "local_only" }),
+    });
+    const bundle = (await (await api("/api/export")).json()) as {
+      nyroExportVersion: number;
+      conversations: Array<{ id: string; messages: Array<{ role: string; content: string }> }>;
+    };
+    assert.ok(bundle.nyroExportVersion >= 1);
+    const c = bundle.conversations.find((x) => x.id === created.conversationId);
+    assert.ok(c, "a conversation that exists is missing from the export");
+    assert.ok(c!.messages.some((m) => m.content === "export me please"));
+  });
+
+  test("it includes settings, models and usage totals", async () => {
+    await api("/api/budget", { method: "PUT", body: JSON.stringify({ dailyUsd: 3 }) });
+    const bundle = (await (await api("/api/export")).json()) as {
+      settings: { budget?: { dailyUsd: number } };
+      models: Array<{ id: string }>;
+      usage: { totalRuns: number };
+    };
+    assert.equal(bundle.settings.budget?.dailyUsd, 3);
+    assert.ok(bundle.models.length > 0);
+    assert.ok(bundle.usage.totalRuns > 0);
+    await api("/api/budget", { method: "DELETE" });
+  });
+
+  test("the markdown export is readable and also key-free", async () => {
+    const res = await api("/api/export?format=markdown");
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /text\/markdown/);
+    const md = await res.text();
+    assert.match(md, /# NYRO conversations/);
+    assert.ok(!md.includes("sk-test-abcdefghijklmnop"), "an API key leaked into the markdown export");
+  });
+
+  test("both formats are sent as downloads with a dated filename", async () => {
+    for (const [q, ext] of [["", "json"], ["?format=markdown", "md"]] as const) {
+      const res = await api(`/api/export${q}`);
+      const cd = res.headers.get("content-disposition") ?? "";
+      assert.match(cd, /^attachment;/);
+      assert.match(cd, new RegExp(`nyro-[a-z]+-\\d{4}-\\d{2}-\\d{2}\\.${ext}`));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("budget enforcement (spec §66)", () => {
   async function setBudget(config: Record<string, unknown>): Promise<void> {
     const res = await api("/api/budget", { method: "PUT", body: JSON.stringify(config) });
