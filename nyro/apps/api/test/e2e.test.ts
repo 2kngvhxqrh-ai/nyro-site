@@ -616,6 +616,105 @@ describe("conversation history", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("search (spec §63)", () => {
+  interface SearchHit { id: string; title: string; snippet: string | null; matches: number }
+
+  async function search(q: string): Promise<SearchHit[]> {
+    return (await json<{ results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`)).results;
+  }
+
+  test("finds a conversation by words in its messages", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "the aardvark migration schedule", mode: "local_only" }),
+    });
+    const hits = await search("aardvark");
+    const hit = hits.find((h) => h.id === c.conversationId);
+    assert.ok(hit, `not found: ${JSON.stringify(hits)}`);
+    assert.ok(hit!.matches > 0);
+  });
+
+  test("returns a highlighted snippet showing why it matched", async () => {
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "please remember the pangolin invoice", mode: "local_only" }),
+    });
+    const hits = await search("pangolin");
+    assert.ok(hits.length > 0);
+    const withSnippet = hits.find((h) => h.snippet !== null);
+    assert.ok(withSnippet, "no snippet returned");
+    assert.match(withSnippet!.snippet!, /<b>pangolin<\/b>/i);
+  });
+
+  test("a prefix matches, so a partially typed word still finds things", async () => {
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "we are debugging the capacitor", mode: "local_only" }),
+    });
+    assert.ok((await search("debug")).length > 0, "prefix did not match");
+    assert.ok((await search("capacit")).length > 0, "partial word did not match");
+  });
+
+  test("word forms the stemmer splits apart still find each other", async () => {
+    // The English stemmer maps "router" to `router` but "routing" to `rout`,
+    // so a plain stem query finds nothing for one when the text has the other.
+    // This is exactly the case prefix matching exists to fix.
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "the marmoset router handled it", mode: "local_only" }),
+    });
+    assert.ok((await search("router")).length > 0, "exact word missed");
+    assert.ok((await search("routing")).length > 0, "a user typing 'routing' found no 'router'");
+  });
+
+  test("all terms must match, not merely any of them", async () => {
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "the quokka ledger reconciliation", mode: "local_only" }),
+    });
+    assert.ok((await search("quokka ledger")).length > 0, "a genuine two-word match was missed");
+    const bogus = await search("quokka zzzznotpresentzzzz");
+    assert.equal(bogus.length, 0, "an unmatched term did not narrow the results");
+  });
+
+  test("finds a conversation by its title even when no message matches", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "nothing notable here", mode: "local_only" }),
+    });
+    await api(`/api/conversations/${c.conversationId}`, {
+      method: "PUT",
+      body: JSON.stringify({ title: "Quarterly zebra planning" }),
+    });
+    const hits = await search("zebra");
+    assert.ok(hits.some((h) => h.id === c.conversationId), "a title match was missed");
+  });
+
+  test("an empty query returns nothing rather than everything", async () => {
+    // Returning the whole history for an empty box would look like a bug and
+    // would be the wrong default for a search field.
+    assert.deepEqual(await search(""), []);
+    assert.deepEqual(await search("   "), []);
+  });
+
+  test("a query that matches nothing returns an empty list, not an error", async () => {
+    const res = await api("/api/search?q=zzzznotpresentzzzz");
+    assert.equal(res.status, 200);
+    assert.deepEqual(((await res.json()) as { results: unknown[] }).results, []);
+  });
+
+  test("punctuation and quotes do not break the query", async () => {
+    for (const q of ["what's this?", 'say "hello"', "a & b | c", "50% off!", "'; drop table messages; --"]) {
+      const res = await api(`/api/search?q=${encodeURIComponent(q)}`);
+      assert.equal(res.status, 200, `query broke search: ${q}`);
+    }
+    // The injection-shaped query above must not have destroyed anything.
+    const still = await json<{ conversations: unknown[] }>("/api/conversations");
+    assert.ok(still.conversations.length > 0, "messages table is gone");
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("export (spec §108, §109)", () => {
   test("the JSON export contains NO API key, with a real key stored", async () => {
     // The openai provider in this suite was created with a real-looking key.

@@ -136,6 +136,16 @@ export interface Conversation {
   messageCount: number;
 }
 
+export interface SearchHit {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+  /** Postgres ts_headline output — contains <b> tags marking the match. */
+  snippet: string | null;
+  matches: number;
+}
+
 export interface StoredMessage {
   id: string;
   role: string;
@@ -212,6 +222,9 @@ export const api = {
     }),
   conversations: () =>
     request<{ conversations: Conversation[] }>("/api/conversations").then((r) => r.conversations),
+  search: (q: string) =>
+    request<{ query: string; results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`)
+      .then((r) => r.results),
   renameConversation: (id: string, title: string) =>
     request<{ id: string; title: string }>(`/api/conversations/${encodeURIComponent(id)}`, {
       method: "PUT",

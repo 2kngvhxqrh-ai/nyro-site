@@ -222,6 +222,17 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     sendJson(ctx.res, 201, { conversationId: id });
   });
 
+  /** Search across conversations (spec §63). */
+  r.get("/api/search", async (ctx) => {
+    const q = ctx.query.get("q") ?? "";
+    if (q.trim().length === 0) {
+      sendJson(ctx.res, 200, { query: "", results: [] });
+      return;
+    }
+    const results = await deps.conversations.search(q);
+    sendJson(ctx.res, 200, { query: q, results });
+  });
+
   r.put("/api/conversations/:id", async (ctx) => {
     const id = ctx.params["id"]!;
     const body = parseOr400(z.object({ title: z.string().min(1).max(200) }), await readJsonBody(ctx.req));

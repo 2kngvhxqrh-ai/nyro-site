@@ -74,6 +74,18 @@ Stated plainly, because a security section that only lists wins is misleading.
 | **No sandboxing** | Nothing executes code yet | §40 |
 | **Key rotation is manual** | Changing `NYRO_SECRET_KEY` invalidates stored keys; they must be re-entered | — |
 
+### Search snippets
+`ts_headline` returns a string containing `<b>` tags. The UI splits on those
+exact tags and rebuilds them as React elements rather than using
+`dangerouslySetInnerHTML`, so message content cannot be interpreted as markup
+whatever a model or a user typed. Verified in a browser with a message
+containing a `<script>` tag and an `onerror` image: no element was created and
+no script ran.
+
+Search terms are reduced to word characters before reaching `to_tsquery`, which
+throws on its own operators — so a query can neither inject operators nor crash
+the endpoint. The query itself is parameterised.
+
 ### Export
 `GET /api/export` produces a file that will end up in cloud storage, an email,
 or a git repo. It contains **no API keys**: providers are exported through

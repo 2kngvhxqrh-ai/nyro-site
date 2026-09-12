@@ -153,6 +153,23 @@ event, not an HTTP status.
   rewrites your spend or the performance measurements derived from it.
 - `GET /api/conversations/:id/messages`
 
+## Search (spec §63)
+
+### `GET /api/search?q=…`
+Full-text search over conversation titles and message content, using Postgres's
+built-in text search — no extension, no search engine, no new dependency.
+
+Terms are **prefix-matched**, because an incremental search box needs to be:
+the English stemmer maps `router` to `router` but `routing` to `rout`, so a
+plain stem query finds nothing for one when the text contains the other. All
+terms must match, not any.
+
+Each hit carries a `snippet` from `ts_headline`, with matches wrapped in `<b>`.
+The UI splits on those tags and rebuilds them as elements rather than injecting
+HTML, so message content can never be interpreted as markup.
+
+An empty query returns no results rather than the whole history.
+
 ## Export (spec §108, §109)
 
 ### `GET /api/export`

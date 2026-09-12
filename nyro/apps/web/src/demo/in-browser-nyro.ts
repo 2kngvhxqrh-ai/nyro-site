@@ -314,6 +314,11 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return errorResponse(409, "config_error", "Saving spending limits needs the real NYRO API. This page has no backend.");
   }
 
+  if (path === "/api/search") {
+    // No database to search in the demo, and inventing hits would be a lie.
+    return jsonResponse(200, { query: url.searchParams.get("q") ?? "", results: [] });
+  }
+
   if (path.startsWith("/api/export")) {
     // The demo has no database and the artifact sandbox blocks downloads
     // anyway, so it says so rather than producing an empty file.

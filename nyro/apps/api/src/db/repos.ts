@@ -455,6 +455,125 @@ export class ConversationRepo {
     }
   }
 
+  /**
+   * Full-text search across conversation titles and message content (spec §63).
+   *
+   * Uses Postgres's built-in text search rather than ILIKE or a search engine:
+   * it is already there, it stems ("routing" finds "routed"), it ranks, and
+   * ts_headline produces the snippet. Adding a search dependency to a
+   * single-user system with a few thousand messages would be infrastructure
+   * for its own sake.
+   *
+   * No tsvector column or GIN index yet. At this size the sequential scan is
+   * imperceptible, and an index that is never measured to be necessary is a
+   * migration nobody asked for. When history makes it slow, the fix is a
+   * generated column plus an index — and the query above does not change.
+   */
+  /**
+   * Builds a prefix tsquery from free text.
+   *
+   * plainto_tsquery alone is wrong for an incremental search box: the English
+   * stemmer maps "router" to `router` but "routing" to `rout`, so typing
+   * "routing" finds nothing in a history full of "the model router". Prefix
+   * matching (`rout:*`) bridges that, and also makes the box behave like a
+   * typeahead while the user is still typing.
+   *
+   * Terms are reduced to word characters before being placed in the query, so
+   * to_tsquery -- which throws on its own operators -- can never see one.
+   */
+  private static prefixQuery(raw: string): string | null {
+    const terms = raw
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((t) => t.length > 0)
+      .slice(0, 10);
+    if (terms.length === 0) return null;
+    return terms.map((t) => `${t}:*`).join(" & ");
+  }
+
+  async search(query: string, limit = 30): Promise<Array<{
+    id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
+  }>> {
+    const trimmed = query.trim();
+    if (trimmed.length === 0) return [];
+    const tsq = ConversationRepo.prefixQuery(trimmed);
+    // A query of pure punctuation still matches titles containing it.
+    if (tsq === null) return this.searchTitlesOnly(trimmed, limit);
+    try {
+      const { rows } = await this.pool.query<{
+        id: string; title: string; updated_at: Date; message_count: number; snippet: string | null; matches: number; rank: number;
+      }>(
+        `with q as (select to_tsquery('english', $2) as tsq),
+         hits as (
+           select m.conversation_id,
+                  count(*)::int as matches,
+                  max(ts_rank(to_tsvector('english', m.content), q.tsq)) as rank,
+                  (array_agg(
+                     ts_headline('english', m.content, q.tsq,
+                                 'MaxWords=22, MinWords=8, ShortWord=3, MaxFragments=1')
+                     order by ts_rank(to_tsvector('english', m.content), q.tsq) desc
+                   ))[1] as snippet
+             from messages m, q
+            where to_tsvector('english', m.content) @@ q.tsq
+            group by m.conversation_id
+         )
+         select c.id,
+                c.title,
+                c.updated_at,
+                (select count(*) from messages m2 where m2.conversation_id = c.id)::int as message_count,
+                coalesce(h.matches, 0) as matches,
+                h.snippet,
+                -- A title match ranks above a body match: naming a conversation
+                -- is a deliberate act, so it is the stronger signal.
+                coalesce(h.rank, 0) + (case when c.title ilike '%' || $1 || '%' then 1 else 0 end) as rank
+           from conversations c
+           left join hits h on h.conversation_id = c.id, q
+          where h.conversation_id is not null
+             or c.title ilike '%' || $1 || '%'
+          order by rank desc, c.updated_at desc
+          limit $3`,
+        [trimmed, tsq, limit],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        updatedAt: r.updated_at.toISOString(),
+        messageCount: r.message_count,
+        snippet: r.snippet,
+        matches: r.matches,
+      }));
+    } catch (err) {
+      throw dbError(err, "searching conversations");
+    }
+  }
+
+  /** Fallback when a query has no searchable words (e.g. only punctuation). */
+  private async searchTitlesOnly(query: string, limit: number): Promise<Array<{
+    id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
+  }>> {
+    try {
+      const { rows } = await this.pool.query<{ id: string; title: string; updated_at: Date; message_count: number }>(
+        `select c.id, c.title, c.updated_at,
+                (select count(*) from messages m where m.conversation_id = c.id)::int as message_count
+           from conversations c
+          where c.title ilike '%' || $1 || '%'
+          order by c.updated_at desc
+          limit $2`,
+        [query, limit],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        updatedAt: r.updated_at.toISOString(),
+        messageCount: r.message_count,
+        snippet: null,
+        matches: 0,
+      }));
+    } catch (err) {
+      throw dbError(err, "searching conversation titles");
+    }
+  }
+
   async addMessage(conversationId: string, role: Role, content: string, modelId: string | null): Promise<string> {
     const id = randomUUID();
     try {

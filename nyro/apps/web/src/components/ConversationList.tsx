@@ -9,8 +9,8 @@
  * deletion does NOT do: run history and cost stay, because removing a chat
  * should not rewrite what you have spent.
  */
-import { useState } from "react";
-import { api, NyroApiError, type Conversation } from "../api.ts";
+import { useEffect, useRef, useState } from "react";
+import { api, NyroApiError, type Conversation, type SearchHit } from "../api.ts";
 import { Button } from "./ui.tsx";
 
 function relativeTime(iso: string): string {
@@ -23,6 +23,32 @@ function relativeTime(iso: string): string {
   const days = Math.round(hours / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * Renders a ts_headline snippet.
+ *
+ * Postgres marks matches with <b> tags, which is the one place this UI has
+ * server-produced markup. Rather than trusting it into the DOM, the string is
+ * split on those exact tags and rebuilt as React elements — so the message
+ * content itself can never be interpreted as HTML, whatever a model or a user
+ * typed into it.
+ */
+function Snippet({ html }: { html: string }) {
+  const parts = html.split(/(<b>|<\/b>)/);
+  let bold = false;
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part === "<b>") { bold = true; return null; }
+        if (part === "</b>") { bold = false; return null; }
+        if (part === "") return null;
+        return bold
+          ? <mark key={i} className="bg-accent/25 text-accent">{part}</mark>
+          : <span key={i}>{part}</span>;
+      })}
+    </>
+  );
 }
 
 export function ConversationList({
@@ -45,6 +71,26 @@ export function ConversationList({
   const [draft, setDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchSeq = useRef(0);
+
+  // Debounced so typing does not fire a query per keystroke. The sequence
+  // number drops results from a query the user has already moved past —
+  // otherwise a slow early request can overwrite a fast later one.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length === 0) { setHits(null); setSearching(false); return; }
+    setSearching(true);
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(() => {
+      void api.search(q)
+        .then((r) => { if (seq === searchSeq.current) { setHits(r); setSearching(false); } })
+        .catch(() => { if (seq === searchSeq.current) { setHits([]); setSearching(false); } });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   async function act(fn: () => Promise<unknown>): Promise<void> {
     setErr(null);
@@ -65,10 +111,55 @@ export function ConversationList({
         <Button onClick={onNew} disabled={busy}>+ New</Button>
       </header>
 
+      <div className="border-b border-line p-2">
+        <input
+          id="conversation-search"
+          className="w-full rounded border border-line bg-sunk px-2 py-1.5 text-xs text-ink outline-none placeholder:text-dim focus:border-accent"
+          placeholder="Search conversations…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+        />
+      </div>
+
       {err ? <p className="border-b border-line px-3 py-2 text-[11px] text-stop">{err}</p> : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {conversations.length === 0 ? (
+        {hits !== null ? (
+          hits.length === 0 ? (
+            <p className="prose-sans px-3 py-4 text-[11.5px] leading-relaxed text-dim">
+              {searching ? "Searching…" : `Nothing matches "${query.trim()}".`}
+            </p>
+          ) : (
+            <ul>
+              {hits.map((h) => (
+                <li key={h.id} className={`border-b border-line/50 ${h.id === activeId ? "bg-accent/10" : ""}`}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(h.id)}
+                    disabled={busy}
+                    className="w-full px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className={`block truncate text-xs ${h.id === activeId ? "text-accent" : "text-ink"}`}>
+                      {h.title}
+                    </span>
+                    {h.snippet ? (
+                      <span className="prose-sans mt-1 block text-[11px] leading-snug text-dim">
+                        <Snippet html={h.snippet} />
+                      </span>
+                    ) : (
+                      <span className="mt-0.5 block text-[10px] text-dim">title match</span>
+                    )}
+                    <span className="mt-1 block text-[10px] text-dim">
+                      {h.matches > 0 ? `${h.matches} matching message${h.matches === 1 ? "" : "s"} · ` : ""}
+                      {relativeTime(h.updatedAt)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : conversations.length === 0 ? (
           <p className="prose-sans px-3 py-4 text-[11.5px] leading-relaxed text-dim">
             Nothing saved yet. Every conversation is stored locally in your own Postgres and will appear here.
           </p>
@@ -159,6 +250,18 @@ export function ConversationList({
           </ul>
         )}
       </div>
+
+      {hits !== null ? (
+        <footer className="border-t border-line px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="text-[11px] text-dim underline-offset-2 hover:text-ink hover:underline"
+          >
+            Clear search
+          </button>
+        </footer>
+      ) : null}
     </aside>
   );
 }

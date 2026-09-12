@@ -34,7 +34,7 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-202 automated tests, run repeatedly with no flakes.
+211 automated tests, run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
