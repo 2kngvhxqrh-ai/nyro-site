@@ -640,9 +640,18 @@ function RoutePreviewStrip({ preview }: { preview: RoutePreview | null }) {
           <span className="text-dim">· ~{preview.estimatedInputTokens.toLocaleString()} tok in</span>
           {preview.budget.message ? <span className="text-wait">· {preview.budget.message}</span> : null}
         </div>
+      ) : rejected.length === 0 ? (
+        // Nothing was even considered, so there is nothing to relax. Telling a
+        // first-run user to loosen their privacy setting sends them to fix a
+        // problem they do not have; the real one is that no provider is
+        // reachable yet.
+        <p className="text-wait">
+          No models are available yet. Add a provider on the Models page and run discovery.
+        </p>
       ) : (
         <p className="text-stop">
-          No model can take this request as configured. Open the reasons below, or relax privacy or the model pin.
+          Every available model was excluded. Open the reasons below — relaxing privacy or clearing the model pin is
+          usually what is needed.
         </p>
       )}
 

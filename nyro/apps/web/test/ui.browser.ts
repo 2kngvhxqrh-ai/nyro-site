@@ -1,5 +1,5 @@
 /**
- * Layout checks in a real browser.
+ * UI checks in a real browser.
  *
  * These exist because a whole class of user-visible bug had no coverage at all,
  * and shipped: at 390px the app rendered 544px wide and was clipped on both
@@ -16,7 +16,7 @@
  *
  * NAMED `.browser.ts`, not `.test.ts`, on purpose: `pnpm test` globs
  * `test/*.test.ts`, and a suite that needs a 130MB browser does not belong in
- * the command a contributor runs by reflex. Run it with `pnpm test:layout`.
+ * the command a contributor runs by reflex. Run it with `pnpm test:ui`.
  * CI runs both, so the coverage is real rather than optional.
  */
 import { test, describe, before, after } from "node:test";
@@ -33,6 +33,9 @@ const DIST = new URL("../dist/", import.meta.url).pathname;
 if (!existsSync(join(DIST, "index.html"))) {
   throw new Error("apps/web/dist is missing. Run `pnpm --filter @nyro/web build` first.");
 }
+// `pnpm test:ui` builds before running for a reason: this suite reads dist/,
+// so a stale build silently tests code that is no longer there. It happened
+// once already — a copy fix looked like a failing assertion.
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -156,11 +159,11 @@ after(async () => {
   await new Promise<void>((r) => server?.close(() => r()));
 });
 
-async function open(width: number): Promise<Page> {
+async function open(width: number, overrides: Record<string, unknown> = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 844 } });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    const body = FIXTURES[path] ?? {};
+    const body = path in overrides ? overrides[path] : (FIXTURES[path] ?? {});
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -305,6 +308,76 @@ describe("wide tables scroll inside themselves", () => {
         });
         assert.deepEqual(bad, [], `${tab}: a table wider than its parent has no horizontal scroller`);
       }
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("the first run, before any provider works", () => {
+  /** A fresh install: the bootstrapped provider exists and is unreachable. */
+  const NOTHING_WORKS = {
+    "/api/models": { models: [] },
+    "/api/conversations": { conversations: [] },
+    "/api/route/preview": {
+      estimatedInputTokens: 7,
+      // No candidates AND nothing rejected: nothing was even considered.
+      decision: { mode: "auto", chosen: null, fallbacks: [], rejected: [] },
+      budget: { action: "allow", message: null, breaches: [] },
+    },
+  };
+
+  test("says to add a provider, not to relax privacy", async () => {
+    // The advice used to be "relax privacy or the model pin" in both cases,
+    // which on a fresh install sends you to fix a problem you do not have.
+    const page = await open(1440, NOTHING_WORKS);
+    try {
+      await page.getByPlaceholder(/Message NYRO/).fill("hello, is anyone there");
+      await page.waitForTimeout(900);
+      const text = await page.locator("main").innerText();
+      assert.match(text, /No models are available yet\. Add a provider/);
+      assert.doesNotMatch(text, /relax privacy/i);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("but still says so when models exist and were all excluded", async () => {
+    // The other half of the distinction: here there IS something to relax.
+    const page = await open(1440, {
+      "/api/conversations": { conversations: [] },
+      "/api/route/preview": {
+        estimatedInputTokens: 7,
+        decision: {
+          mode: "auto", chosen: null, fallbacks: [],
+          rejected: [{ modelId: "openai:gpt-4o-mini", reason: "request is local-only and this model is not local" }],
+        },
+        budget: { action: "allow", message: null, breaches: [] },
+      },
+    });
+    try {
+      await page.getByPlaceholder(/Message NYRO/).fill("something private");
+      await page.waitForTimeout(900);
+      const text = await page.locator("main").innerText();
+      assert.match(text, /Every available model was excluded/);
+      assert.doesNotMatch(text, /Add a provider on the Models page and run discovery/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an empty install still renders every tab without error", async () => {
+    const page = await open(390, NOTHING_WORKS);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    try {
+      for (const tab of TABS) {
+        await page.getByRole("button", { name: tab, exact: true }).click();
+        await page.waitForTimeout(300);
+        const out = await clipped(page);
+        assert.deepEqual(out, [], `${tab} on a fresh install clips ${out.length} element(s)`);
+      }
+      assert.deepEqual(errors, []);
     } finally {
       await page.close();
     }

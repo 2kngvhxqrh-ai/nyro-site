@@ -23,7 +23,7 @@ pnpm typecheck    # both packages
 pnpm build        # both packages
 pnpm test         # both suites; needs TEST_DATABASE_URL (a THROWAWAY database)
 pnpm --filter @nyro/web test         # web suite alone (no database)
-pnpm --filter @nyro/web test:layout  # layout, in a real browser (needs Chromium)
+pnpm --filter @nyro/web test:ui      # UI in a real browser (needs Chromium)
 ```
 
 Tests delete rows. Never point `TEST_DATABASE_URL` at a real database.
@@ -170,13 +170,13 @@ the whole project. Nothing failed, so nobody looked.
 nothing. A method genuinely meant for external callers does not belong in the
 browser's client.
 
-**20. Layout is checked by a browser, not by reading CSS.**
+**20. The UI is checked by a browser, not by reading CSS.**
 A grid item defaults to `min-width: auto`, and `truncate` means
 `white-space: nowrap` — so at phone width the longest conversation title set
 the width of the entire app, which rendered 544px wide inside 390px and was
 clipped on both edges. `document.scrollWidth` equalled the viewport throughout,
 so nothing reported an overflow. `apps/web/test/layout.test.ts` loads the real
-build with a stubbed API and measures actual boxes at four widths. Its fixtures
+build with a stubbed API and measures actual boxes at four widths, and renders states a populated database never shows — a fresh install with no working provider among them. Its fixtures
 exist to reproduce the bugs — a very long conversation title, a long provider
 health detail — so shrinking them defeats the test. It distinguishes CLIPPED
 from merely off-screen: content inside `overflow-x: auto` is reachable by
