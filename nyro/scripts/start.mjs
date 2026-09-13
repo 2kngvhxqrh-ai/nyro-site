@@ -32,7 +32,10 @@ function run(cmd, args, opts = {}) {
 try {
   await access(join(root, ".env"));
 } catch {
-  console.error("\nNo .env found. Run:  pnpm setup\n");
+  // NOT "pnpm setup": that is a pnpm builtin which configures pnpm's own home
+  // directory and never runs this package's script, so a user following that
+  // advice lands back here having changed nothing.
+  console.error("\nNo .env found. Run:  pnpm setup:env\n");
   process.exit(1);
 }
 

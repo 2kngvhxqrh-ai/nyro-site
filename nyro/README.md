@@ -69,7 +69,7 @@ Two things are worth calling out because their *absence is visible* in the code:
 ```bash
 docker compose -f docker/docker-compose.yml up -d   # Postgres
 pnpm install
-pnpm setup                                          # writes .env, generates the encryption key
+pnpm setup:env                                      # writes .env, generates the encryption key
 pnpm start                                          # builds the UI, migrates, serves everything
 ```
 

@@ -15,7 +15,7 @@ Two separate things live here:
 ## Commands (run inside `nyro/`)
 
 ```bash
-pnpm setup        # writes .env, generates NYRO_SECRET_KEY (never overwrites)
+pnpm setup:env    # writes .env, generates NYRO_SECRET_KEY (never overwrites)
 pnpm smoke        # live check against the user's REAL providers (spends money)
 pnpm start        # builds the UI, migrates, serves everything on :8787
 pnpm dev          # Vite on :5173 with hot reload, API on :8787

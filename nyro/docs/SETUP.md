@@ -22,10 +22,10 @@ and `TEST_DATABASE_URL` at them. No extensions are required.
 
 ```bash
 pnpm install
-pnpm setup
+pnpm setup:env
 ```
 
-`pnpm setup` writes `.env` from `.env.example` and generates `NYRO_SECRET_KEY`
+`pnpm setup:env` writes `.env` from `.env.example` and generates `NYRO_SECRET_KEY`
 for you. It never touches an existing `.env` — regenerating that key would make
 every stored provider API key undecryptable. It is a Node script, so it behaves
 identically on Windows, where `openssl` is often absent.

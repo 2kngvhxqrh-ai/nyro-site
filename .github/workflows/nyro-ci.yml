@@ -96,6 +96,31 @@ jobs:
         # that; a browser measuring real boxes can.
         run: pnpm --filter @nyro/web test:ui
 
+      - name: No script name is silently shadowed by a pnpm builtin
+        # `pnpm setup` runs PNPM's OWN setup — it configures pnpm's home
+        # directory and edits your shell rc — and never runs the package
+        # script of that name. The README told new users to run it as step
+        # one, so they got no .env, then `pnpm start` told them to run it
+        # again. A documented first command that silently does something else
+        # is worse than a missing one.
+        #
+        # `start` and `test` are deliberately absent from this list: pnpm
+        # treats those as npm lifecycle names and DOES run the script.
+        run: |
+          set -e
+          shadowed="setup init env exec add remove install link unlink store server dlx create publish pack patch import rebuild prune why licenses deploy fetch dedupe patch-commit"
+          fail=0
+          for f in package.json apps/api/package.json apps/web/package.json; do
+            for name in $shadowed; do
+              if node -e "const s=require('./$f').scripts||{};process.exit(s['$name']?0:1)"; then
+                echo "::error file=$f::script \"$name\" is a pnpm builtin; \`pnpm $name\` would not run it."
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "No script name collides with a pnpm builtin."
+
       - name: Verify the demo bundles the real router, not a copy
         # The demo's value rests entirely on it running the same code as the
         # server. If someone replaces the bundled import with a local

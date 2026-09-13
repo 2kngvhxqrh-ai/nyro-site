@@ -13,7 +13,7 @@
     "typecheck": "pnpm --filter \"./apps/*\" typecheck",
     "test": "pnpm --filter \"./apps/*\" test",
     "migrate": "pnpm --filter @nyro/api migrate",
-    "setup": "node scripts/setup.mjs",
+    "setup:env": "node scripts/setup.mjs",
     "start": "node scripts/start.mjs",
     "smoke": "pnpm --filter @nyro/api smoke"
   }
