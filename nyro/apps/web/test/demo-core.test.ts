@@ -189,6 +189,57 @@ describe("the routing preview", () => {
   });
 });
 
+describe("stopping keeps what was written", () => {
+  test("a cancelled stream stores the partial answer, marked", async () => {
+    // The server keeps it with finish_reason 'cancelled'. If the demo dropped
+    // it instead, the page that stands in for NYRO would demonstrate the
+    // opposite of what NYRO does.
+    const ac = new AbortController();
+    let conversationId: string | null = null;
+
+    const res = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(sendBody("demo stop keeps partial")),
+      signal: ac.signal,
+    });
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = "";
+    while ((seen.match(/event: delta/g) ?? []).length < 3) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      seen += decoder.decode(value, { stream: true });
+    }
+    assert.ok((seen.match(/event: delta/g) ?? []).length >= 3, "not enough tokens to have a partial");
+    ac.abort();
+    await new Promise((r) => setTimeout(r, 300));
+
+    const list = (await (await fetch("/api/conversations")).json()) as {
+      conversations: Array<{ id: string; title: string }>;
+    };
+    conversationId = list.conversations.find((c) => c.title.includes("demo stop keeps partial"))?.id ?? null;
+    assert.ok(conversationId, "the cancelled turn did not create a conversation");
+
+    const messages = (await (await fetch(`/api/conversations/${conversationId}/messages`)).json()) as {
+      messages: Array<{ role: string; content: string; finishReason: string | null }>;
+    };
+    assert.deepEqual(messages.messages.map((m) => m.role), ["user", "assistant"]);
+    assert.ok(messages.messages[1]!.content.length > 0, "an empty partial was stored");
+    assert.equal(messages.messages[1]!.finishReason, "cancelled");
+  });
+
+  test("a completed answer is not marked", async () => {
+    const frames = await stream(sendBody("demo completes normally"));
+    const id = String(frames.find((f) => f.type === "done")!.data["conversationId"]);
+    const messages = (await (await fetch(`/api/conversations/${id}/messages`)).json()) as {
+      messages: Array<{ finishReason: string | null }>;
+    };
+    assert.equal(messages.messages[1]!.finishReason, null);
+  });
+});
+
 describe("a failure inside the demo is visible", () => {
   test("a malformed body becomes an error response, not a rejected fetch", async () => {
     // Before this, a throw in the stream branch escaped the interceptor and

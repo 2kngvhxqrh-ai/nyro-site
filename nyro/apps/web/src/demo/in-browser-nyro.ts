@@ -32,7 +32,10 @@ import { shouldFail, simulate } from "./simulated-provider.ts";
 // ---------------------------------------------------------------------------
 
 let models: RegisteredModel[] = seedModels();
-const conversations = new Map<string, Array<{ id: string; role: string; content: string; modelId: string | null; createdAt: string }>>();
+const conversations = new Map<
+  string,
+  Array<{ id: string; role: string; content: string; modelId: string | null; finishReason: string | null; createdAt: string }>
+>();
 const conversationMeta = new Map<string, { title: string; createdAt: string; updatedAt: string }>();
 
 interface Run {
@@ -216,7 +219,7 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
       }
 
       if (!rewound) {
-        stored.push({ id: uuid(), role: "user", content: body.message, modelId: null, createdAt: new Date().toISOString() });
+        stored.push({ id: uuid(), role: "user", content: body.message, modelId: null, finishReason: null, createdAt: new Date().toISOString() });
       }
 
       // The same bounded fallback walk the real executor performs.
@@ -242,6 +245,15 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
         for (const w of words) {
           if (cancelled) {
             runs.push({ modelId: model.id, ok: false, errorCode: "cancelled", latencyMs: Date.now() - attemptStart, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+            // Keep what was written, marked — the same as the server. Dropping
+            // it would make the screen and the stored conversation disagree.
+            if (emitted.trim().length > 0) {
+              stored.push({
+                id: uuid(), role: "assistant", content: emitted, modelId: model.id,
+                finishReason: "cancelled", createdAt: new Date().toISOString(),
+              });
+              conversationMeta.get(conversationId)!.updatedAt = new Date().toISOString();
+            }
             signal?.removeEventListener("abort", onAbort);
             controller.close();
             return;
@@ -257,7 +269,7 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
         const latencyMs = Date.now() - attemptStart;
 
         runs.push({ modelId: model.id, ok: true, errorCode: null, latencyMs, inputTokens: run.inputTokens, outputTokens: run.outputTokens, costUsd });
-        stored.push({ id: uuid(), role: "assistant", content: emitted, modelId: model.id, createdAt: new Date().toISOString() });
+        stored.push({ id: uuid(), role: "assistant", content: emitted, modelId: model.id, finishReason: null, createdAt: new Date().toISOString() });
         conversationMeta.get(conversationId)!.updatedAt = new Date().toISOString();
 
         push(sse("usage", { inputTokens: run.inputTokens, outputTokens: run.outputTokens, costUsd }));

@@ -473,6 +473,68 @@ describe("chat: the Phase 1 milestone flow", () => {
     assert.equal(after.failedRuns, before.failedRuns, "a cancellation was counted as a failure");
     assert.ok(after.cancelledRuns > before.cancelledRuns, "the cancellation was not recorded");
   });
+
+  test("stopping keeps the text already written, marked as incomplete", async () => {
+    // Stopping used to discard it: the screen showed an answer, the database
+    // had none, and a reload made it vanish. Pressing Stop is usually a signal
+    // that you already got what you needed, so throwing it away is the one
+    // outcome a Stop button must not produce.
+    let conversationId: string | null = null;
+    const ac = new AbortController();
+    try {
+      const res = await fetch(`${baseUrl}/api/chat/stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "cancel me and keep it", mode: "local_only" }),
+        signal: ac.signal,
+      });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let seen = "";
+      // Wait for several deltas, so there is a genuine partial rather than one
+      // token that could pass by accident.
+      while ((seen.match(/event: delta/g) ?? []).length < 4) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        seen += decoder.decode(value, { stream: true });
+      }
+      assert.ok((seen.match(/event: delta/g) ?? []).length >= 4, "not enough tokens arrived to have a partial");
+      ac.abort();
+    } catch {
+      /* the abort rejects the in-flight read; that is the point */
+    }
+
+    await new Promise((r) => setTimeout(r, 800));
+
+    const { conversations } = await json<{ conversations: Array<{ id: string; title: string }> }>("/api/conversations");
+    conversationId = conversations.find((c) => c.title.includes("cancel me and keep it"))?.id ?? null;
+    assert.ok(conversationId, "the cancelled turn did not create a conversation");
+
+    const { messages } = await json<{
+      messages: Array<{ role: string; content: string; finishReason: string | null; modelId: string | null }>;
+    }>(`/api/conversations/${conversationId}/messages`);
+
+    assert.deepEqual(messages.map((m) => m.role), ["user", "assistant"], "the partial answer was not kept");
+    const answer = messages[1]!;
+    assert.ok(answer.content.length > 0, "an empty answer was stored");
+    assert.equal(answer.finishReason, "cancelled", "the partial was kept but not marked as incomplete");
+    assert.equal(answer.modelId, "ollama:llama3.2:1b", "the partial was stored without the model that wrote it");
+
+    // A completed answer must NOT be marked, or the flag means nothing.
+    const done = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "finish normally", mode: "local_only" }),
+    });
+    const normal = await json<{ messages: Array<{ finishReason: string | null }> }>(
+      `/api/conversations/${done.conversationId}/messages`,
+    );
+    assert.equal(normal.messages[1]!.finishReason, null);
+  });
+
+  test("the markdown export says an answer was stopped", async () => {
+    const md = await (await api("/api/export?format=markdown")).text();
+    assert.match(md, /\(you stopped this answer part-way\)/);
+  });
 });
 
 // ---------------------------------------------------------------------------

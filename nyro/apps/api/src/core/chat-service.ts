@@ -348,6 +348,14 @@ export class ChatService {
       await this.conversations.addMessage(conversationId, "user", input.message, null);
     }
 
+    // Kept so a cancelled answer is not lost. Stopping used to discard the text
+    // the user had already read: the screen showed an answer and the database
+    // had none, and a reload made it vanish. Only wrapped when the caller
+    // streams — passing an onDelta to a non-streaming request would switch the
+    // executor onto the streaming transport, which is a different request.
+    let partial = "";
+    let lastAttempted: string | null = null;
+
     try {
       const outcome = await this.executor.execute({
         decision,
@@ -355,8 +363,21 @@ export class ChatService {
         conversationId,
         ...(input.temperature !== null ? { temperature: input.temperature } : {}),
         ...(signal ? { signal } : {}),
-        ...(callbacks.onDelta ? { onDelta: callbacks.onDelta } : {}),
-        ...(callbacks.onAttempt ? { onAttempt: callbacks.onAttempt } : {}),
+        ...(callbacks.onDelta
+          ? {
+              onDelta: (text: string) => {
+                partial += text;
+                callbacks.onDelta?.(text);
+              },
+            }
+          : {}),
+        onAttempt: (a: { modelId: string; attemptIndex: number; isFallback: boolean }) => {
+          // A fallback means the partial belongs to a different model than the
+          // one first chosen, and starts again from empty.
+          lastAttempted = a.modelId;
+          partial = "";
+          callbacks.onAttempt?.(a);
+        },
       });
 
       await this.conversations.addMessage(conversationId, "assistant", outcome.content, outcome.model.id);
@@ -364,7 +385,14 @@ export class ChatService {
       return { ...outcome, conversationId };
     } catch (err) {
       const e = NyroError.from(err, "chat-service");
-      if (e.code === "cancelled") this.bus.emit({ type: "chat.cancelled", conversationId });
+      if (e.code === "cancelled") {
+        // Marked, not silently kept: an answer that stops mid-sentence must not
+        // read later as one the model chose to end.
+        if (partial.trim().length > 0) {
+          await this.conversations.addMessage(conversationId, "assistant", partial, lastAttempted, "cancelled");
+        }
+        this.bus.emit({ type: "chat.cancelled", conversationId });
+      }
       throw e;
     }
   }

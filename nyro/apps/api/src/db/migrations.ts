@@ -108,4 +108,19 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: "0002_message_finish_reason",
+    sql: /* sql */ `
+      -- Why an assistant message ended. Null for every message written before
+      -- this column existed and for every ordinary completion; 'cancelled'
+      -- marks an answer the user stopped part-way.
+      --
+      -- Stopping used to discard the text entirely, so the screen and the
+      -- database disagreed about what had happened: you could read an answer,
+      -- press Stop because you had what you needed, and find nothing there on
+      -- reload. Keeping it is only honest if it is also marked, or a truncated
+      -- answer would later read as a complete one.
+      alter table messages add column if not exists finish_reason text;
+    `,
+  },
 ];

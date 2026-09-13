@@ -164,6 +164,8 @@ export interface StoredMessage {
   role: string;
   content: string;
   modelId: string | null;
+  /** 'cancelled' for an answer the user stopped part-way; null for a normal one. */
+  finishReason: string | null;
 }
 
 export interface ApiError {

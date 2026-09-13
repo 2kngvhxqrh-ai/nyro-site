@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (299 tests: 264 API, 35 web) and was
+Everything in this list is covered by the test suite (303 tests: 266 API, 37 web) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -26,7 +26,7 @@ verified running against a real Postgres and a real browser.
 | Routing modes: auto, cheapest, fastest, best, local_only, cloud_only | working |
 | Privacy enforcement — a local-only request can never reach a cloud model | working, tested |
 | Automatic fallback to the next-ranked model when one fails | working, tested |
-| Stop button that genuinely cancels the upstream model call | working, tested |
+| Stop button that genuinely cancels the upstream model call, keeping what was written | working, tested |
 | Conversation persistence, with history you can browse, resume, rename and delete | working, tested |
 | Export everything you own to JSON or readable Markdown, with no API keys | working, tested |
 | Full-text search across every conversation, with highlighted snippets | working, tested |

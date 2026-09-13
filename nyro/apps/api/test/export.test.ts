@@ -29,8 +29,8 @@ describe("markdown rendering", () => {
       conversations: [{
         id: "c1", title: "How routing works", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z",
         messages: [
-          { role: "user", content: "Which model did you use?", modelId: null, createdAt: "2026-01-01T00:00:00.000Z" },
-          { role: "assistant", content: "The local one.", modelId: "ollama:llama3.2:1b", createdAt: "2026-01-01T00:00:01.000Z" },
+          { role: "user", content: "Which model did you use?", modelId: null, createdAt: "2026-01-01T00:00:00.000Z", finishReason: null },
+          { role: "assistant", content: "The local one.", modelId: "ollama:llama3.2:1b", createdAt: "2026-01-01T00:00:01.000Z", finishReason: null },
         ],
       }],
     }));
@@ -47,7 +47,7 @@ describe("markdown rendering", () => {
     const md = toMarkdown(bundle({
       conversations: [{
         id: "c1", title: "t", createdAt: "x", updatedAt: "y",
-        messages: [{ role: "assistant", content, modelId: null, createdAt: "z" }],
+        messages: [{ role: "assistant", content, modelId: null, createdAt: "z", finishReason: null }],
       }],
     }));
     assert.ok(md.includes(content), "content was altered on the way out");
@@ -65,7 +65,7 @@ describe("markdown rendering", () => {
     const md = toMarkdown(bundle({
       conversations: [{
         id: "c1", title: "t", createdAt: "x", updatedAt: "y",
-        messages: [{ role: "assistant", content: "hi", modelId: null, createdAt: "z" }],
+        messages: [{ role: "assistant", content: "hi", modelId: null, createdAt: "z", finishReason: null }],
       }],
     }));
     assert.match(md, /\*\*NYRO\*\*/);

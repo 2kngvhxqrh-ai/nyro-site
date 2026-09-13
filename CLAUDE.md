@@ -71,6 +71,12 @@ Every adapter ends a cancelled stream with `{done, finishReason: "cancelled"}`
 rather than throwing, so Stop behaves identically on every transport.
 Cancellations are counted separately from failures in `model_runs`; counting
 them as failures would teach the router to avoid healthy models.
+A cancellation also KEEPS what was written, with `finish_reason = 'cancelled'`.
+Stopping used to discard it, so the screen showed an answer and the database
+had none — you could read a reply, press Stop because you already had what you
+needed, and lose it on reload. Keeping it is only honest if it is also marked,
+in the transcript and in both export formats, or a truncated answer later reads
+as a complete one.
 
 **8. Decrypted API keys never leave `ProviderRepo.getConfig()`.**
 The `PublicProvider` type has no key field, so returning one is a type error.

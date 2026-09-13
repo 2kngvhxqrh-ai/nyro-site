@@ -500,12 +500,15 @@ export class ConversationRepo {
     }
   }
 
-  async messages(conversationId: string, limit = 200): Promise<Array<ChatMessage & { id: string; modelId: string | null; createdAt: string }>> {
+  async messages(
+    conversationId: string,
+    limit = 200,
+  ): Promise<Array<ChatMessage & { id: string; modelId: string | null; createdAt: string; finishReason: string | null }>> {
     try {
       const { rows } = await this.pool.query<{
-        id: string; role: Role; content: string; model_id: string | null; created_at: Date;
+        id: string; role: Role; content: string; model_id: string | null; finish_reason: string | null; created_at: Date;
       }>(
-        `select id, role, content, model_id, created_at from messages
+        `select id, role, content, model_id, finish_reason, created_at from messages
           where conversation_id = $1 order by created_at asc limit $2`,
         [conversationId, limit],
       );
@@ -514,6 +517,7 @@ export class ConversationRepo {
         role: r.role,
         content: r.content,
         modelId: r.model_id,
+        finishReason: r.finish_reason,
         createdAt: r.created_at.toISOString(),
       }));
     } catch (err) {
@@ -640,12 +644,19 @@ export class ConversationRepo {
     }
   }
 
-  async addMessage(conversationId: string, role: Role, content: string, modelId: string | null): Promise<string> {
+  async addMessage(
+    conversationId: string,
+    role: Role,
+    content: string,
+    modelId: string | null,
+    /** 'cancelled' for an answer the user stopped part-way; null for a normal one. */
+    finishReason: string | null = null,
+  ): Promise<string> {
     const id = randomUUID();
     try {
       await this.pool.query(
-        "insert into messages (id, conversation_id, role, content, model_id) values ($1,$2,$3,$4,$5)",
-        [id, conversationId, role, content, modelId],
+        "insert into messages (id, conversation_id, role, content, model_id, finish_reason) values ($1,$2,$3,$4,$5,$6)",
+        [id, conversationId, role, content, modelId, finishReason],
       );
       await this.pool.query("update conversations set updated_at = now() where id = $1", [conversationId]);
       return id;

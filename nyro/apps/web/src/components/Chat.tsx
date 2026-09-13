@@ -32,6 +32,8 @@ type Turn =
       budget: { message: string | null; action: string } | null;
       /** True for a turn loaded from history rather than streamed just now. */
       restored?: boolean;
+      /** The user pressed Stop part-way through this answer. */
+      stopped?: boolean;
       latencyMs: number | null;
       error: ApiError | null;
       streaming: boolean;
@@ -171,6 +173,7 @@ export function Chat({
                 error: null,
                 streaming: false,
                 restored: true,
+                stopped: m.finishReason === "cancelled",
               } as Turn),
         ),
       );
@@ -334,7 +337,10 @@ export function Chat({
   function stop(): void {
     abortRef.current?.abort();
     setBusy(false);
-    patchLast((t) => { t.streaming = false; });
+    // Marked here as well as on reload, so the screen says the same thing
+    // about this answer before and after a refresh. The server keeps the
+    // partial text with finish_reason 'cancelled'.
+    patchLast((t) => { t.streaming = false; if (t.text.trim().length > 0) t.stopped = true; });
   }
 
   const enabledModels = models.filter((m) => m.enabled);
@@ -551,6 +557,12 @@ function AssistantTurn({
 
       {chosen && chosen.reasons.length > 0 ? (
         <p className="border-b border-line px-4 py-2 text-[11px] text-dim">Chosen because: {chosen.reasons.join(" · ")}</p>
+      ) : null}
+
+      {turn.stopped ? (
+        <p className="border-b border-line px-4 py-2 text-[11px] text-wait">
+          You stopped this answer part-way. What the model had written is kept, and it is incomplete.
+        </p>
       ) : null}
 
       <div className="px-4 py-3">

@@ -41,7 +41,13 @@ export interface ExportBundle {
     title: string;
     createdAt: string;
     updatedAt: string;
-    messages: Array<{ role: string; content: string; modelId: string | null; createdAt: string }>;
+    messages: Array<{
+      role: string;
+      content: string;
+      modelId: string | null;
+      finishReason: string | null;
+      createdAt: string;
+    }>;
   }>;
   usage: { totalRuns: number; failedRuns: number; cancelledRuns: number; totalCostUsd: number };
 }
@@ -91,6 +97,7 @@ export async function buildExport(deps: {
         role: m.role,
         content: m.content,
         modelId: m.modelId,
+        finishReason: m.finishReason,
         createdAt: m.createdAt,
       })),
     });
@@ -171,7 +178,9 @@ export function toMarkdown(bundle: ExportBundle): string {
     out.push("");
     for (const m of c.messages) {
       const who = m.role === "user" ? "You" : m.modelId ? `NYRO (${m.modelId})` : "NYRO";
-      out.push(`**${who}**`);
+      // A stopped answer is incomplete. Reproducing it without saying so would
+      // let a truncated sentence read as the model's whole reply.
+      out.push(`**${who}**${m.finishReason === "cancelled" ? " *(you stopped this answer part-way)*" : ""}`);
       out.push("");
       out.push(m.content);
       out.push("");

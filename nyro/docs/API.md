@@ -202,6 +202,12 @@ SSE. Closing the connection cancels the upstream model call.
 | `delta` | `{text}` |
 | `usage` | `{inputTokens, outputTokens, costUsd}` |
 | `done` | `{conversationId, modelId, latencyMs}` |
+
+Closing the connection mid-answer keeps what the model had already written: it
+is stored with `finishReason: "cancelled"` and the text is **not** discarded.
+`GET /api/conversations/:id/messages` returns `finishReason` on every message —
+`null` for an ordinary completion — and both export formats mark a stopped
+answer, so a truncated reply never reads later as a complete one.
 | `error` | the error object above |
 
 Because headers are already sent, a mid-stream failure arrives as an `error`
