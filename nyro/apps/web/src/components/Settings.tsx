@@ -31,6 +31,10 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
       const b = await api.budget();
       setState(b);
       setDraft(b.config);
+      // Clear a previous failure. Without this the panel came back with its
+      // data AND the stale "Failed to fetch" still sitting above it, which
+      // reads as "this is broken" on top of something that just worked.
+      setNotice((n) => (n?.tone === "err" ? null : n));
     } catch (err) {
       setNotice({ tone: "err", text: err instanceof NyroApiError ? err.message : String(err) });
     }
@@ -68,7 +72,21 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
   }
 
   if (!state || !draft) {
-    return <Panel title="Spending limits"><Empty>Loading…</Empty></Panel>;
+    // A failed load used to sit on "Loading…" forever: the error was captured
+    // into `notice` and this early return rendered before anything could show
+    // it. With the API down that is an honest-looking spinner in front of a
+    // known failure — the one state a user cannot act on.
+    return (
+      <Panel title="Spending limits" actions={notice?.tone === "err" ? <Button onClick={() => void load()}>Retry</Button> : undefined}>
+        {notice?.tone === "err" ? (
+          <p className="prose-sans px-1 py-2 text-[11.5px] leading-relaxed text-stop">
+            Could not load your spending limits: {notice.text}
+          </p>
+        ) : (
+          <Empty>Loading…</Empty>
+        )}
+      </Panel>
+    );
   }
 
   const paidProviders = providers.filter((p) => !p.local);

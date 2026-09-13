@@ -383,3 +383,65 @@ describe("the first run, before any provider works", () => {
     }
   });
 });
+
+describe("when the API goes away mid-session", () => {
+  test("the page survives, says so, and offers a way back", async () => {
+    // Realistic: you stop the server, or Postgres dies under it. The page is
+    // already open and working when the API stops answering.
+    const page = await open(1440);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (e) => pageErrors.push(e.message));
+    try {
+      await page.route("**/api/**", (route) => route.abort("connectionrefused"));
+
+      await page.getByPlaceholder(/Message NYRO/).fill("does this fail gracefully");
+      await page.waitForTimeout(900);
+      await page.getByRole("button", { name: "Send" }).click();
+      await page.waitForTimeout(1500);
+
+      const chat = await page.locator("main").innerText();
+      assert.doesNotMatch(chat, /Working…/, "the composer is stuck pretending a request is in flight");
+      assert.match(chat, /Could not reach the NYRO API/, "the failure was not explained");
+
+      // Settings sat on "Loading…" forever: the error was captured and an
+      // early return rendered a placeholder in front of it.
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(900);
+      const settings = await page.locator("main").innerText();
+      assert.doesNotMatch(settings, /Loading…/, "Settings is stuck on a spinner in front of a known failure");
+      assert.match(settings, /Could not load your spending limits/);
+      assert.equal(await page.getByRole("button", { name: "Retry" }).count(), 1, "no way to retry");
+
+      assert.deepEqual(pageErrors, [], "the outage threw in the page");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and recovers when it comes back", async () => {
+    const page = await open(1440);
+    try {
+      // Keep a reference: unroute("**/api/**") with no handler removes EVERY
+      // handler for that pattern, including the fixtures, so "the API came
+      // back" would actually mean "the API is now a 404".
+      const offline = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => route.abort("connectionrefused");
+      await page.route("**/api/**", offline);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(900);
+      assert.match(await page.locator("main").innerText(), /Could not load your spending limits/);
+
+      await page.unroute("**/api/**", offline);
+      await page.getByRole("button", { name: "Retry" }).click();
+      await page.waitForTimeout(900);
+      const after = await page.locator("main").innerText();
+      assert.doesNotMatch(after, /Could not load your spending limits/, "Retry did not recover");
+      // Case-insensitive: these headings are uppercased by CSS, and innerText
+      // reports what is painted, not what is in the source.
+      assert.match(after, /spent so far/i, "the panel did not come back");
+      // The stale failure used to survive the reload and sit above the data.
+      assert.doesNotMatch(after, /Failed to fetch/i, "a stale error survived a successful reload");
+    } finally {
+      await page.close();
+    }
+  });
+});
