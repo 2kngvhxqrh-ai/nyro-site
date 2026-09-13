@@ -19,13 +19,32 @@ import { resolve } from "node:path";
  * index.html cannot be used as-is. Keeping the shell in source control (rather
  * than hand-editing dist-demo after each build) means the publish is
  * reproducible from `pnpm build:demo`.
+ *
+ * The shell names its assets by hand, so it can drift from what the build
+ * actually emits — it referenced a preload chunk Rollup had stopped emitting,
+ * which a browser silently 404s. Every local reference is therefore checked
+ * against the bundle, and a stale one fails the build.
  */
 function emitArtifactShell() {
   return {
     name: "nyro-artifact-shell",
-    async generateBundle(this: { emitFile: (f: { type: "asset"; fileName: string; source: string }) => void }) {
+    async generateBundle(
+      this: { emitFile: (f: { type: "asset"; fileName: string; source: string }) => void },
+      _options: unknown,
+      bundle: Record<string, unknown>,
+    ) {
       const { readFile } = await import("node:fs/promises");
       const source = await readFile(resolve(__dirname, "artifact.html"), "utf8");
+
+      const referenced = [...source.matchAll(/(?:href|src)="\.\/([^"]+)"/g)].map((m) => m[1]!);
+      const missing = referenced.filter((name) => !(name in bundle));
+      if (missing.length > 0) {
+        throw new Error(
+          `artifact.html references ${missing.map((n) => `"${n}"`).join(", ")}, ` +
+            `which the demo build does not emit. Emitted: ${Object.keys(bundle).join(", ")}.`,
+        );
+      }
+
       this.emitFile({ type: "asset", fileName: "artifact.html", source });
     },
   };

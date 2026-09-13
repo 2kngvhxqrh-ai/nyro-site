@@ -13,7 +13,17 @@
  *
  * Every fake part is labelled in the UI. Nothing leaves the page.
  */
-import { estimateMessagesTokens, route, type Capability, type ChatMessage, type RegisteredModel, type RoutingDecision } from "./core-imports.ts";
+import {
+  DEFAULT_INSTRUCTIONS,
+  estimateMessagesTokens,
+  resolveSystemPrompt,
+  route,
+  type Capability,
+  type ChatMessage,
+  type Instructions,
+  type RegisteredModel,
+  type RoutingDecision,
+} from "./core-imports.ts";
 import { seedModels, SEED_PROVIDERS } from "./seed.ts";
 import { shouldFail, simulate } from "./simulated-provider.ts";
 
@@ -66,9 +76,17 @@ interface ChatBody {
   temperature: number | null; maxCostUsd: number | null; requiredCapabilities: Capability[];
 }
 
+/**
+ * The demo's standing instructions. In-memory and per page load, like its
+ * conversations — there is no database here, and pretending the setting
+ * survives a refresh would be a lie about what this page is.
+ */
+let instructions: Instructions = { ...DEFAULT_INSTRUCTIONS };
+
 function plan(body: ChatBody, history: ChatMessage[]): { decision: RoutingDecision; estimatedInputTokens: number } {
   const messages: ChatMessage[] = [];
-  if (body.systemPrompt) messages.push({ role: "system", content: body.systemPrompt });
+  const systemPrompt = resolveSystemPrompt(instructions, body.systemPrompt);
+  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push(...history);
   messages.push({ role: "user", content: body.message });
 
@@ -322,6 +340,21 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
       messageCount: conversations.get(id)?.length ?? 0,
     }));
     return jsonResponse(200, { conversations: list });
+  }
+
+  if (path === "/api/instructions" && method === "GET") {
+    return jsonResponse(200, instructions);
+  }
+  if (path === "/api/instructions" && method === "PUT") {
+    instructions = {
+      enabled: Boolean(body["enabled"]),
+      text: String(body["text"] ?? "").slice(0, 50_000),
+    };
+    return jsonResponse(200, instructions);
+  }
+  if (path === "/api/instructions" && method === "DELETE") {
+    instructions = { ...DEFAULT_INSTRUCTIONS };
+    return jsonResponse(200, instructions);
   }
 
   if (path === "/api/budget" && method === "GET") {

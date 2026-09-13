@@ -80,6 +80,12 @@ export interface Decision {
   rejected: Array<{ modelId: string; reason: string }>;
 }
 
+/** A standing system prompt applied to every turn that does not supply its own. */
+export interface Instructions {
+  enabled: boolean;
+  text: string;
+}
+
 export interface BudgetConfig {
   dailyUsd: number | null;
   weeklyUsd: number | null;
@@ -246,6 +252,10 @@ export const api = {
   setBudget: (config: BudgetConfig) =>
     request<{ config: BudgetConfig }>("/api/budget", { method: "PUT", body: JSON.stringify(config) }),
   clearBudget: () => request<{ config: BudgetConfig }>("/api/budget", { method: "DELETE" }),
+  instructions: () => request<Instructions>("/api/instructions"),
+  setInstructions: (value: Instructions) =>
+    request<Instructions>("/api/instructions", { method: "PUT", body: JSON.stringify(value) }),
+  clearInstructions: () => request<Instructions>("/api/instructions", { method: "DELETE" }),
   routingRules: () => request<{ rules: RoutingRule[] }>("/api/routing-rules"),
   setRoutingRules: (rules: RoutingRule[]) =>
     request<{ rules: RoutingRule[] }>("/api/routing-rules", { method: "PUT", body: JSON.stringify({ rules }) }),

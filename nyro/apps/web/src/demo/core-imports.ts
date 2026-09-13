@@ -12,6 +12,9 @@ export { traitsFor } from "../../../api/src/providers/model-traits.ts";
 export { PROVIDER_PRESETS } from "../../../api/src/providers/presets.ts";
 export { estimateMessagesTokens, estimateTokens } from "../../../api/src/util/tokens.ts";
 export { NyroError } from "../../../api/src/core/errors.ts";
+export { DEFAULT_INSTRUCTIONS, resolveSystemPrompt } from "../../../api/src/core/instructions.ts";
+
+export type { Instructions } from "../../../api/src/core/instructions.ts";
 
 export type {
   Capability,

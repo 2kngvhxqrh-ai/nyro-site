@@ -18,6 +18,8 @@ import {
   routingRulesSchema,
   type RoutingRules,
 } from "./routing-rules.ts";
+import { DEFAULT_INSTRUCTIONS, resolveSystemPrompt, type Instructions } from "./instructions.ts";
+import { instructionsSchema } from "./instructions-schema.ts";
 import {
   budgetConfigSchema,
   DEFAULT_BUDGET,
@@ -102,6 +104,8 @@ export const BUDGET_SETTINGS_KEY = "budget";
 export const ROUTING_RULES_SETTINGS_KEY = "routing_rules";
 /** Whether measured performance may override the registry's guessed scores. */
 export const LEARNING_SETTINGS_KEY = "measured_routing";
+/** Where the user's standing system prompt lives (spec §26). */
+export const INSTRUCTIONS_SETTINGS_KEY = "instructions";
 
 export class ChatService {
   private readonly registry: Registry;
@@ -157,6 +161,14 @@ export class ChatService {
     return parsed.success ? parsed.data : DEFAULT_ROUTING_RULES;
   }
 
+  /** The user's standing instructions, falling back to none. */
+  async instructions(): Promise<Instructions> {
+    const raw = await this.settings.get<unknown>(INSTRUCTIONS_SETTINGS_KEY);
+    if (raw === null) return DEFAULT_INSTRUCTIONS;
+    const parsed = instructionsSchema.safeParse(raw);
+    return parsed.success ? parsed.data : DEFAULT_INSTRUCTIONS;
+  }
+
   async plan(
     input: ChatInput,
     history: ChatMessage[],
@@ -176,7 +188,12 @@ export class ChatService {
       : undefined;
 
     const messages: ChatMessage[] = [];
-    if (input.systemPrompt) messages.push({ role: "system", content: input.systemPrompt });
+    // Resolved here rather than at the HTTP edge so that every caller of
+    // plan() -- chat, stream and the routing preview -- sizes the SAME prompt.
+    // A preview that ignored standing instructions would report a token count
+    // and a candidate list the real request then contradicts.
+    const systemPrompt = resolveSystemPrompt(await this.instructions(), input.systemPrompt);
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push(...history);
     messages.push({ role: "user", content: input.message });
 

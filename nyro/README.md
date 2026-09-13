@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (251 tests: 228 API, 23 web) and was
+Everything in this list is covered by the test suite (276 tests: 253 API, 23 web) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -33,6 +33,7 @@ verified running against a real Postgres and a real browser.
 | Correct a model's price or context window; discovery will not overwrite it | working, tested |
 | Markdown rendering with syntax-labelled, copyable code blocks | working, tested |
 | Regenerate an answer, or retry it on a different model | working, tested |
+| Custom instructions: a standing system prompt you can switch off without losing | working, tested |
 | Health checks per component; per-model run/latency/cost stats | working |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |
 | Task-specific routing rules ("coding goes to Claude") | working, tested |

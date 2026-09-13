@@ -21,8 +21,8 @@ pnpm start        # builds the UI, migrates, serves everything on :8787
 pnpm dev          # Vite on :5173 with hot reload, API on :8787
 pnpm typecheck    # both packages
 pnpm build        # both packages
-pnpm test         # API suite; needs TEST_DATABASE_URL (a THROWAWAY database)
-pnpm --filter @nyro/web test   # web suite (markdown parser); no database
+pnpm test         # both suites; needs TEST_DATABASE_URL (a THROWAWAY database)
+pnpm --filter @nyro/web test   # web suite alone (no database)
 ```
 
 Tests delete rows. Never point `TEST_DATABASE_URL` at a real database.
@@ -104,7 +104,10 @@ Phase 2 — a system that quietly keeps your history and never shows it is worse
 than one that does not keep it, because you cannot tell. Deleting a
 conversation removes its messages but NOT its `model_runs`
 (`on delete set null`), so removing a chat never rewrites what you have spent
-or what NYRO measured. Tested.
+or what NYRO measured. Tested. The same rule covers the `settings` table:
+`export.ts` lists its keys through the `*_SETTINGS_KEY` constants, and
+`instructions.test.ts` fails if a new settings document is added without one,
+because a document NYRO stores and never exports is state the user cannot see.
 
 **14. `traitsSource` must always describe where the values actually came from.**
 `catalog` means a known-model lookup, `heuristic` means inferred from the name,
@@ -131,6 +134,16 @@ Speed is measured from real runs once a model has enough of them; reasoning and
 coding are still inferred from the model name. The Models table and the routing
 explanation both say which is which. Never present an estimate as an
 observation.
+
+**18. Configuration is never a message.**
+Custom instructions are sent to the model as a system message and are *not*
+written to the conversation. Storing them would fold them into the history of
+every later turn (compounding on each one), let them be edited from the chat,
+and put a setting into an export of what the user said. They stay in
+`settings`, resolved per turn by `resolveSystemPrompt` — a pure function, so
+the precedence rule (a request's own prompt replaces them; `""` means none) is
+testable without a database. `plan()` resolves them, which is what keeps
+`/api/route/preview` sizing the same request `/api/chat` will send.
 
 ## Honesty rules for this codebase
 

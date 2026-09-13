@@ -34,7 +34,7 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-251 automated tests (228 API, 23 web), run repeatedly with no flakes.
+276 automated tests (253 API, 23 web), run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|

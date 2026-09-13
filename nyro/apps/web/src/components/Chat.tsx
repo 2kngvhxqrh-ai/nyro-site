@@ -9,10 +9,16 @@
  * are the router's own short operational notes (spec §81).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamChat, type ApiError, type Conversation, type Decision, type Model } from "../api.ts";
+import { api, streamChat, type ApiError, type Conversation, type Decision, type Instructions, type Model } from "../api.ts";
 import { ConversationList } from "./ConversationList.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
+
+/** Enough of the instructions to recognise them, without reprinting an essay. */
+function preview(text: string): string {
+  const flat = text.trim().replace(/\s+/g, " ");
+  return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat;
+}
 
 type Turn =
   | { kind: "user"; text: string }
@@ -59,6 +65,10 @@ export function Chat({
   // lazily), and useState only reads its argument once. Adopt it when it
   // shows up, but never clobber a conversation the user has already started.
   useEffect(() => {
+    void api.instructions().then(setInstructions).catch(() => setInstructions(null));
+  }, []);
+
+  useEffect(() => {
     if (initialTurns.length > 0) {
       setTurns((prev) => (prev.length === 0 ? initialTurns : prev));
     }
@@ -67,6 +77,11 @@ export function Chat({
   const [mode, setMode] = useState<string>("auto");
   const [pinnedModel, setPinnedModel] = useState<string>("");
   const [privacy, setPrivacy] = useState<string>("normal");
+  // Standing instructions are invisible by design -- they never appear in the
+  // transcript -- so the request panel says when one is shaping every answer.
+  // A system that quietly rewrites its own behaviour and never tells you is
+  // the hardest kind to debug.
+  const [instructions, setInstructions] = useState<Instructions | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -280,6 +295,13 @@ export function Chat({
           <p className="mt-3 text-[11px] text-live">
             Privacy is enforced in the router: cloud models are excluded entirely, including from the fallback chain.
             If no local model is available the request fails rather than escalating.
+          </p>
+        ) : null}
+        {instructions && instructions.enabled && instructions.text.trim().length > 0 ? (
+          <p className="prose-sans mt-3 text-[11px] leading-relaxed text-dim">
+            <span className="uppercase tracking-wider text-accent">Custom instructions</span>{" "}
+            are being sent with every turn: <span className="text-ink">{preview(instructions.text)}</span>{" "}
+            Change or switch them off in Settings.
           </p>
         ) : null}
       </Panel>

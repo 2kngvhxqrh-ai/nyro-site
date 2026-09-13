@@ -145,6 +145,10 @@ escalates.
 `requiredCapabilities` are hard requirements. NYRO's own inferred capabilities
 are preferences and never cause a refusal.
 
+`systemPrompt` **replaces** any standing custom instructions for that one
+request rather than being appended to them (see below). Send `""` to suppress
+the stored instructions without setting a prompt of your own.
+
 ### Regenerating (spec §58, §103)
 Send `"regenerate": true` with a `conversationId` to re-answer the last turn.
 
@@ -231,6 +235,34 @@ Cancellations are excluded from both throughput and success rate.
 
 ### `PUT /api/performance`
 `{ "enabled": boolean }` — turns measured routing off or on. Defaults to on.
+
+## Custom instructions (spec §26)
+
+A standing system prompt, prepended to every turn that does not send its own.
+
+### `GET /api/instructions` · `PUT /api/instructions` · `DELETE /api/instructions`
+
+```json
+{ "enabled": false, "text": "" }
+```
+
+`enabled` is separate from `text` on purpose: switching instructions off to
+find out whether they are what is making an answer strange should not require
+deleting them first. `DELETE` clears both.
+
+Resolution order for a turn's system prompt:
+
+1. the request's own `systemPrompt`, when it is not `null` — an empty string
+   means "no system prompt", not "fall back to the stored one";
+2. otherwise the stored instructions, if `enabled` and non-empty;
+3. otherwise none.
+
+The instructions are counted in `estimatedInputTokens`, so `POST
+/api/route/preview` sizes the same request that `POST /api/chat` will send —
+a long instruction can legitimately exclude a small-context model. They are
+**not** stored as a message: they never appear in a conversation transcript,
+and never enter the history of a later turn. They do appear in both export
+formats, because they are state NYRO holds on the user's behalf.
 
 ## Routing rules (spec §10)
 

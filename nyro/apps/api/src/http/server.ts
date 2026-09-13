@@ -14,7 +14,14 @@ import type { EventBus } from "../core/events.ts";
 import { systemHealth } from "../core/health.ts";
 import type { Registry } from "../core/registry.ts";
 import type { ChatService } from "../core/chat-service.ts";
-import { BUDGET_SETTINGS_KEY, LEARNING_SETTINGS_KEY, ROUTING_RULES_SETTINGS_KEY } from "../core/chat-service.ts";
+import {
+  BUDGET_SETTINGS_KEY,
+  INSTRUCTIONS_SETTINGS_KEY,
+  LEARNING_SETTINGS_KEY,
+  ROUTING_RULES_SETTINGS_KEY,
+} from "../core/chat-service.ts";
+import { DEFAULT_INSTRUCTIONS } from "../core/instructions.ts";
+import { instructionsSchema } from "../core/instructions-schema.ts";
 import { routingRulesSchema, validateRuleTargets } from "../core/routing-rules.ts";
 import { adjustmentFor, MIN_SAMPLES } from "../core/performance.ts";
 import { buildExport, toMarkdown } from "../core/export.ts";
@@ -422,6 +429,25 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
 
     await deps.settings.set(ROUTING_RULES_SETTINGS_KEY, body);
     sendJson(ctx.res, 200, body);
+  });
+
+  // ---- Custom instructions (spec §26) -------------------------------------
+  r.get("/api/instructions", async (ctx) => {
+    sendJson(ctx.res, 200, await deps.chat.instructions());
+  });
+
+  r.put("/api/instructions", async (ctx) => {
+    const body = parseOr400(instructionsSchema, await readJsonBody(ctx.req));
+    await deps.settings.set(INSTRUCTIONS_SETTINGS_KEY, body);
+    sendJson(ctx.res, 200, body);
+  });
+
+  r.delete("/api/instructions", async (ctx) => {
+    // Removing instructions clears the text as well as switching them off.
+    // Leaving the text behind would mean "delete" quietly kept a copy of
+    // something the user asked NYRO to forget.
+    await deps.settings.set(INSTRUCTIONS_SETTINGS_KEY, DEFAULT_INSTRUCTIONS);
+    sendJson(ctx.res, 200, DEFAULT_INSTRUCTIONS);
   });
 
   // ---- Measured performance (spec §13, §102) ------------------------------

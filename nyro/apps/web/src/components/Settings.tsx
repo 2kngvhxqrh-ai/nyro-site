@@ -6,7 +6,7 @@
  * distrust or forget, and both end badly.
  */
 import { useEffect, useState } from "react";
-import { api, NyroApiError, type BudgetConfig, type BudgetState, type Model, type PerformanceState, type Provider, type RoutingRule } from "../api.ts";
+import { api, NyroApiError, type BudgetConfig, type BudgetState, type Instructions, type Model, type PerformanceState, type Provider, type RoutingRule } from "../api.ts";
 import { Badge, Button, Empty, Field, formatCost, inputClass, Panel } from "./ui.tsx";
 
 /** An empty field means "no limit", which is different from zero. */
@@ -153,6 +153,8 @@ export function Settings({ providers, models }: { providers: Provider[]; models:
         </div>
       </Panel>
 
+      <InstructionsPanel />
+
       <ExportPanel />
 
       <MeasuredRoutingPanel />
@@ -252,6 +254,121 @@ function ExportPanel() {
  * better evidence than a guess from a model's name — and the UI marks which
  * is which, so nothing here is hidden.
  */
+/**
+ * Custom instructions (spec §26).
+ *
+ * The chat API has always taken a per-request systemPrompt and there was no
+ * way to set one, so every request sent null. This is that field, given a
+ * place to live between requests.
+ *
+ * Off by default, and the switch is separate from the text on purpose: turning
+ * instructions off to check whether they are what is making an answer strange
+ * should not require deleting them first.
+ */
+function InstructionsPanel() {
+  const [saved, setSaved] = useState<Instructions | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function load(): Promise<void> {
+    try {
+      const value = await api.instructions();
+      setSaved(value);
+      setText(value.text);
+    } catch {
+      setSaved(null);
+    }
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function write(next: Instructions, message: string): Promise<void> {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.setInstructions(next);
+      await load();
+      setNotice(message);
+    } catch (err) {
+      setNotice(err instanceof NyroApiError ? `${err.info.code}: ${err.message}` : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(): Promise<void> {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.clearInstructions();
+      await load();
+      setNotice("Instructions removed.");
+    } catch (err) {
+      setNotice(err instanceof NyroApiError ? `${err.info.code}: ${err.message}` : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!saved) return null;
+
+  const trimmed = text.trim();
+  const dirty = text !== saved.text;
+  const active = saved.enabled && saved.text.trim().length > 0;
+
+  return (
+    <Panel
+      title="Custom instructions"
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => void write({ enabled: !saved.enabled, text: saved.text }, saved.enabled ? "Instructions switched off." : "Instructions switched on.")}
+            disabled={busy || saved.text.trim().length === 0}
+          >
+            {saved.enabled ? "Turn off" : "Turn on"}
+          </Button>
+          <Button onClick={() => void remove()} disabled={busy || saved.text.length === 0}>Remove</Button>
+          <Button
+            variant="primary"
+            onClick={() => void write({ enabled: trimmed.length > 0 ? saved.enabled : false, text }, "Instructions saved.")}
+            disabled={busy || !dirty}
+          >
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      }
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <Badge tone={active ? "live" : "dim"}>{active ? "in effect" : "not in effect"}</Badge>
+        <span className="prose-sans text-[11.5px] text-dim">
+          {active
+            ? "Sent as a system message ahead of every turn."
+            : saved.text.trim().length === 0
+              ? "Nothing saved yet."
+              : "Saved, but switched off — no turn is using it."}
+        </span>
+      </div>
+
+      <textarea
+        className={`${inputClass} min-h-[7rem] resize-y`}
+        value={text}
+        spellCheck={false}
+        placeholder="e.g. Answer in British English. When I ask for code, give me the code first and the explanation after."
+        onChange={(e) => setText(e.target.value)}
+      />
+
+      <p className="prose-sans mt-2 text-[11.5px] leading-relaxed text-dim">
+        {text.length.toLocaleString()} characters. Instructions are prepended to every turn, so they count
+        toward the context window and toward what a cloud model charges — the routing preview sizes them
+        along with the rest of the request. A turn that sends its own system prompt replaces these rather
+        than adding to them.
+      </p>
+
+      {notice ? <p className="prose-sans mt-2 text-[11.5px] text-dim">{notice}</p> : null}
+    </Panel>
+  );
+}
+
 function MeasuredRoutingPanel() {
   const [state, setState] = useState<PerformanceState | null>(null);
   const [busy, setBusy] = useState(false);

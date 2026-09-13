@@ -18,6 +18,13 @@
  * configuration only, and the export says so in the file itself.
  */
 import type { ConversationRepo, ModelRepo, ProviderRepo, RunRepo, SettingsRepo } from "../db/repos.ts";
+import {
+  BUDGET_SETTINGS_KEY,
+  INSTRUCTIONS_SETTINGS_KEY,
+  LEARNING_SETTINGS_KEY,
+  ROUTING_RULES_SETTINGS_KEY,
+} from "./chat-service.ts";
+import { instructionsSchema } from "./instructions-schema.ts";
 
 export const EXPORT_FORMAT_VERSION = 1;
 
@@ -39,7 +46,18 @@ export interface ExportBundle {
   usage: { totalRuns: number; failedRuns: number; cancelledRuns: number; totalCostUsd: number };
 }
 
-const SETTINGS_KEYS = ["budget", "routing_rules", "measured_routing"] as const;
+/**
+ * Every settings document NYRO stores, referenced through the constants that
+ * define them rather than retyped here — a key spelled twice is a key that can
+ * drift, and a drifted key means NYRO holds something the export never shows.
+ * `instructions.test.ts` asserts this list covers every *_SETTINGS_KEY there is.
+ */
+const SETTINGS_KEYS = [
+  BUDGET_SETTINGS_KEY,
+  ROUTING_RULES_SETTINGS_KEY,
+  LEARNING_SETTINGS_KEY,
+  INSTRUCTIONS_SETTINGS_KEY,
+] as const;
 
 export async function buildExport(deps: {
   providers: ProviderRepo;
@@ -129,6 +147,18 @@ export function toMarkdown(bundle: ExportBundle): string {
   out.push("");
   out.push(bundle.note);
   out.push("");
+
+  // Standing instructions shaped every answer below them, so a reader of this
+  // file needs to see them to make sense of it. Shown even when switched off,
+  // because text NYRO is still storing is exactly what an export is for.
+  const instructions = instructionsSchema.safeParse(bundle.settings[INSTRUCTIONS_SETTINGS_KEY]);
+  if (instructions.success && instructions.data.text.trim().length > 0) {
+    out.push(`## Custom instructions${instructions.data.enabled ? "" : " (switched off)"}`);
+    out.push("");
+    out.push(instructions.data.text.trim());
+    out.push("");
+  }
+
   out.push(`${bundle.conversations.length} conversation(s).`);
   out.push("");
 
