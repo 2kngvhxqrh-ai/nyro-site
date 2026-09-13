@@ -386,7 +386,9 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
       id, title: meta.title, createdAt: meta.createdAt, updatedAt: meta.updatedAt,
       messageCount: conversations.get(id)?.length ?? 0,
     }));
-    return jsonResponse(200, { conversations: list });
+    // Same shape as the server: the sidebar reads `total` to say whether it is
+    // showing everything.
+    return jsonResponse(200, { conversations: list, total: list.length });
   }
 
   if (path === "/api/instructions" && method === "GET") {

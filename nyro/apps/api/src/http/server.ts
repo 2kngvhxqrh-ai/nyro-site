@@ -261,7 +261,10 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
 
   // ---- Conversations ------------------------------------------------------
   r.get("/api/conversations", async (ctx) => {
-    sendJson(ctx.res, 200, { conversations: await deps.conversations.list() });
+    // `total` lets the sidebar say it is showing a page rather than everything.
+    const conversations = await deps.conversations.list();
+    const total = await deps.conversations.count();
+    sendJson(ctx.res, 200, { conversations, total });
   });
 
   r.post("/api/conversations", async (ctx) => {

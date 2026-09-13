@@ -478,15 +478,15 @@ export class ConversationRepo {
     }
   }
 
-  async list(limit = 50): Promise<ConversationSummary[]> {
+  async list(limit = 50, offset = 0): Promise<ConversationSummary[]> {
     try {
       const { rows } = await this.pool.query<{
         id: string; title: string; created_at: Date; updated_at: Date; message_count: number;
       }>(
         `select c.id, c.title, c.created_at, c.updated_at,
                 (select count(*) from messages m where m.conversation_id = c.id) as message_count
-           from conversations c order by c.updated_at desc limit $1`,
-        [limit],
+           from conversations c order by c.updated_at desc, c.id desc limit $1 offset $2`,
+        [limit, offset],
       );
       return rows.map((r) => ({
         id: r.id,
@@ -497,6 +497,48 @@ export class ConversationRepo {
       }));
     } catch (err) {
       throw dbError(err, "listing conversations");
+    }
+  }
+
+  /** How many conversations exist, so a truncated list can say so. */
+  async count(): Promise<number> {
+    try {
+      const { rows } = await this.pool.query<{ n: string }>("select count(*)::text as n from conversations");
+      return Number(rows[0]?.n ?? 0);
+    } catch (err) {
+      throw dbError(err, "counting conversations");
+    }
+  }
+
+  /**
+   * Every message in a conversation, oldest first, with no limit.
+   *
+   * Only the export uses this. `messages()` deliberately returns one page,
+   * which is right for a transcript and wrong for a file whose entire purpose
+   * is to contain everything — an export that silently drops the oldest turns
+   * makes the promise it exists to keep into a false one.
+   */
+  async allMessages(
+    conversationId: string,
+  ): Promise<Array<ChatMessage & { id: string; modelId: string | null; createdAt: string; finishReason: string | null }>> {
+    try {
+      const { rows } = await this.pool.query<{
+        id: string; role: Role; content: string; model_id: string | null; finish_reason: string | null; created_at: Date;
+      }>(
+        `select id, role, content, model_id, finish_reason, created_at from messages
+          where conversation_id = $1 order by created_at asc, id asc`,
+        [conversationId],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        modelId: r.model_id,
+        finishReason: r.finish_reason,
+        createdAt: r.created_at.toISOString(),
+      }));
+    } catch (err) {
+      throw dbError(err, "reading every message");
     }
   }
 

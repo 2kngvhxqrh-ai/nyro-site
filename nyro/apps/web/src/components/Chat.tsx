@@ -94,6 +94,7 @@ export function Chat({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsTotal, setConversationsTotal] = useState(0);
   const [loadingHistory, setLoadingHistory] = useState(false);
   // A transcript that simply starts mid-conversation is indistinguishable from
   // one that began there, so say how many turns are above the top.
@@ -141,9 +142,12 @@ export function Chat({
   const refreshConversations = useCallback(async () => {
     if (!showHistory) return;
     try {
-      setConversations(await api.conversations());
+      const { conversations: page, total } = await api.conversations();
+      setConversations(page);
+      setConversationsTotal(total);
     } catch {
       setConversations([]);
+      setConversationsTotal(0);
     }
   }, [showHistory]);
 
@@ -494,6 +498,7 @@ export function Chat({
       <div className="min-w-0 max-h-[40vh] min-h-0 overflow-hidden lg:max-h-none">
         <ConversationList
           conversations={conversations}
+          total={conversationsTotal}
           activeId={conversationId}
           busy={busy}
           onOpen={(id) => void openConversation(id)}
@@ -501,7 +506,7 @@ export function Chat({
           onChanged={() => {
             void refreshConversations();
             // The open conversation may have just been deleted.
-            void api.conversations().then((list) => {
+            void api.conversations().then(({ conversations: list }) => {
               if (conversationId && !list.some((c) => c.id === conversationId)) startNew();
             });
           }}

@@ -242,8 +242,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  conversations: () =>
-    request<{ conversations: Conversation[] }>("/api/conversations").then((r) => r.conversations),
+  /** Returns a page of conversations AND how many exist, which can be more. */
+  conversations: () => request<{ conversations: Conversation[]; total: number }>("/api/conversations"),
   search: (q: string) =>
     request<{ query: string; results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`)
       .then((r) => r.results),

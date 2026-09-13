@@ -76,7 +76,17 @@ export async function buildExport(deps: {
   // even if someone adds a field to the provider row later.
   const providers = await deps.providers.listPublic();
   const models = await deps.models.list();
-  const summaries = await deps.conversations.list(1000);
+  // Paged until exhausted rather than capped at a round number. An export
+  // that stops at the thousandth conversation is not "everything the system
+  // knows" — it is a file that looks complete and is not, which is the exact
+  // failure the export exists to prevent.
+  const summaries = [];
+  const PAGE = 200;
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await deps.conversations.list(PAGE, offset);
+    summaries.push(...page);
+    if (page.length < PAGE) break;
+  }
   const stats = await deps.runs.stats(24 * 365);
 
   const settings: Record<string, unknown> = {};
@@ -87,7 +97,8 @@ export async function buildExport(deps: {
 
   const conversations = [];
   for (const c of summaries) {
-    const messages = await deps.conversations.messages(c.id, 10_000);
+    // Every message, not one page: see allMessages().
+    const messages = await deps.conversations.allMessages(c.id);
     conversations.push({
       id: c.id,
       title: c.title,

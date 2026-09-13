@@ -492,3 +492,28 @@ describe("a transcript longer than one page", () => {
     }
   });
 });
+
+describe("a conversation list longer than one page", () => {
+  test("says it is showing a page, and where the rest are", async () => {
+    // The sidebar shows the 50 most recent. Without saying so, a user with
+    // hundreds of conversations sees a list that looks like all of them.
+    const page = await open(1440, { "/api/conversations": { ...(FIXTURES["/api/conversations"] as object), total: 412 } });
+    try {
+      const text = await page.locator("aside").innerText();
+      assert.match(text, /Showing the 25 most recent of 412/);
+      assert.match(text, /search finds them/i);
+      assert.match(text, /export/i, "it does not say where to get the rest");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("says nothing when the list is complete", async () => {
+    const page = await open(1440);
+    try {
+      assert.doesNotMatch(await page.locator("aside").innerText(), /most recent of/);
+    } finally {
+      await page.close();
+    }
+  });
+});

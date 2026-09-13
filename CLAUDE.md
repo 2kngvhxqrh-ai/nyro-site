@@ -115,7 +115,12 @@ Phase 2 — a system that quietly keeps your history and never shows it is worse
 than one that does not keep it, because you cannot tell. Deleting a
 conversation removes its messages but NOT its `model_runs`
 (`on delete set null`), so removing a chat never rewrites what you have spent
-or what NYRO measured. Tested. The same rule covers the `settings` table:
+or what NYRO measured. Tested. It also means the EXPORT is complete: it pages
+until exhausted rather than stopping at a round number, because a file that
+looks like everything and is not is the exact failure the export exists to
+prevent. Any list the UI truncates says so and says where the rest are — the
+conversation sidebar and a long transcript both do. The same rule covers the
+`settings` table:
 `export.ts` lists its keys through the `*_SETTINGS_KEY` constants, and
 `instructions.test.ts` fails if a new settings document is added without one,
 because a document NYRO stores and never exports is state the user cannot see.

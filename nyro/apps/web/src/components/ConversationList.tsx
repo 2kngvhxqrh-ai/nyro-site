@@ -53,6 +53,7 @@ function Snippet({ html }: { html: string }) {
 
 export function ConversationList({
   conversations,
+  total,
   activeId,
   busy,
   onOpen,
@@ -60,6 +61,8 @@ export function ConversationList({
   onChanged,
 }: {
   conversations: Conversation[];
+  /** How many exist. The list is one page, so it can be fewer than this. */
+  total: number;
   activeId: string | null;
   /** True while a response is streaming; switching mid-stream would strand it. */
   busy: boolean;
@@ -266,6 +269,13 @@ export function ConversationList({
             Clear search
           </button>
         </footer>
+      ) : null}
+
+      {hits === null && total > conversations.length ? (
+        <p className="prose-sans shrink-0 border-t border-line px-3 py-2 text-[10px] leading-relaxed text-dim">
+          Showing the {conversations.length} most recent of {total.toLocaleString()}. The rest are still stored — search
+          finds them, and they are all in your export.
+        </p>
       ) : null}
     </aside>
   );

@@ -729,6 +729,76 @@ describe("a conversation longer than the page limit", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("the export contains everything, not a page of it", () => {
+  // The export is what makes the project's stated promise true: "you have to
+  // be able to read everything the system knows in a text editor, with nothing
+  // running." It took `list(1000)` and `messages(id, 10_000)`, so a large
+  // account produced a file that looked complete and was not — the precise
+  // failure the export exists to prevent, and the thing invariant 13 forbids.
+  let bigId: string;
+
+  before(async () => {
+    // Past the OLD hard cap of 1000, not merely past the 50 the sidebar shows.
+    // A smaller number would assert the property while sailing under the
+    // boundary that actually broke — a test that cannot fail where it matters.
+    const convs: string[] = [];
+    for (let i = 0; i < 1100; i++) {
+      convs.push(`(gen_random_uuid(), 'bulk conversation ${i}', now() - interval '${1100 - i} minutes', now() - interval '${1100 - i} minutes')`);
+    }
+    await app.pool.query(`insert into conversations (id, title, created_at, updated_at) values ${convs.join(",")}`);
+
+    const c = await json<{ conversationId: string }>("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify({ title: "an export-sized conversation" }),
+    });
+    bigId = c.conversationId;
+    // Past the OLD 10,000-message cap, for the same reason.
+    const msgs: string[] = [];
+    for (let i = 1; i <= 5050; i++) {
+      const ago = (5100 - i) * 2;
+      msgs.push(`(gen_random_uuid(), '${bigId}', 'user', 'bulk turn ${i}', null, now() - interval '${ago} seconds')`);
+      msgs.push(`(gen_random_uuid(), '${bigId}', 'assistant', 'bulk answer ${i}', 'ollama:llama3.2:1b', now() - interval '${ago - 1} seconds')`);
+    }
+    await app.pool.query(
+      `insert into messages (id, conversation_id, role, content, model_id, created_at) values ${msgs.join(",")}`,
+    );
+  });
+
+  test("the conversation list is a page, and says how many exist", async () => {
+    const r = await json<{ conversations: unknown[]; total: number }>("/api/conversations");
+    assert.equal(r.conversations.length, 50, "the page size changed");
+    assert.ok(r.total > 1100, `total should count every conversation, got ${r.total}`);
+  });
+
+  test("but the export contains every conversation", async () => {
+    const bundle = await json<{ conversations: Array<{ id: string; title: string; messages: unknown[] }> }>("/api/export");
+    const { total } = await json<{ total: number }>("/api/conversations");
+    assert.equal(
+      bundle.conversations.length,
+      total,
+      `the export has ${bundle.conversations.length} conversations but ${total} are stored`,
+    );
+    assert.ok(bundle.conversations.some((c) => c.title === "bulk conversation 0"), "the oldest bulk conversation is missing");
+  });
+
+  test("and every message in them, past the transcript's page size", async () => {
+    const bundle = await json<{ conversations: Array<{ id: string; messages: Array<{ content: string }> }> }>("/api/export");
+    const big = bundle.conversations.find((c) => c.id === bigId);
+    assert.ok(big, "the large conversation is missing from the export");
+    assert.equal(big!.messages.length, 10_100, "the export dropped messages");
+    // Both ends: a page would have one or the other, never both.
+    assert.ok(big!.messages.some((m) => m.content === "bulk turn 1"), "the oldest message is missing");
+    assert.ok(big!.messages.some((m) => m.content === "bulk answer 5050"), "the newest message is missing");
+  });
+
+  test("the markdown export carries them too", async () => {
+    const md = await (await api("/api/export?format=markdown")).text();
+    assert.match(md, /bulk turn 1\b/, "the oldest message is missing from the readable export");
+    assert.match(md, /bulk answer 5050\b/, "the newest message is missing from the readable export");
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("regenerate (spec §58, §103)", () => {
   async function messages(id: string): Promise<Array<{ role: string; content: string; modelId: string | null }>> {
     return (await json<{ messages: Array<{ role: string; content: string; modelId: string | null }> }>(
