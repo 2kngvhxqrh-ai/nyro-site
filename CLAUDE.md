@@ -153,6 +153,16 @@ the precedence rule (a request's own prompt replaces them; `""` means none) is
 testable without a database. `plan()` resolves them, which is what keeps
 `/api/route/preview` sizing the same request `/api/chat` will send.
 
+**19. A capability nobody can reach is not shipped.**
+Three bugs came from one shape: something built and documented on the server,
+wired into `apps/web/src/api.ts`, and called by no component. `systemPrompt`
+was accepted by `/api/chat` from Phase 1 and always sent as `null`;
+`/api/route/preview` — the view that makes a router legible — went unused for
+the whole project. Nothing failed, so nobody looked.
+`apps/web/test/api-surface.test.ts` fails when a client method is called by
+nothing. A method genuinely meant for external callers does not belong in the
+browser's client.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

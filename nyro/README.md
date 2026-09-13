@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (298 tests: 264 API, 34 web) and was
+Everything in this list is covered by the test suite (299 tests: 264 API, 35 web) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
