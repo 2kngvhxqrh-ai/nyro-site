@@ -178,6 +178,24 @@ export class ChatService {
     return parsed.success ? parsed.data : DEFAULT_INSTRUCTIONS;
   }
 
+  /**
+   * The turns a request will actually carry.
+   *
+   * Shared by send() and the routing preview so the two cannot disagree. The
+   * preview endpoint used to pass `[]` while accepting a conversationId, which
+   * meant it sized a one-message request and then the real send carried up to
+   * twenty — understating the tokens, understating the cost, and potentially
+   * naming a model whose context could not hold the real thing.
+   */
+  async historyFor(conversationId: string | null, rewound = false): Promise<ChatMessage[]> {
+    if (!conversationId) return [];
+    // A conversation that does not exist simply has no history; the caller
+    // that cares about existence (send) checks separately and reports it.
+    const stored = await this.conversations.messages(conversationId);
+    const source = rewound ? stored.slice(0, -1) : stored;
+    return source.slice(-HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content }));
+  }
+
   async plan(
     input: ChatInput,
     history: ChatMessage[],
@@ -299,14 +317,10 @@ export class ChatService {
       }
     }
 
-    const stored = await this.conversations.messages(conversationId);
     // On a regenerate or an edit the prompt is already the last stored message,
     // so it must not also be appended as history — that would send it twice.
     const rewound = input.regenerate === true || input.editLast === true;
-    const historySource = rewound ? stored.slice(0, -1) : stored;
-    const history: ChatMessage[] = historySource
-      .slice(-HISTORY_TURNS)
-      .map((m) => ({ role: m.role, content: m.content }));
+    const history = await this.historyFor(conversationId, rewound);
 
     const { decision, messages, budget } = await this.plan(effectiveInput, history);
 

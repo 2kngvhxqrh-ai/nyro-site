@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (291 tests: 261 API, 30 web) and was
+Everything in this list is covered by the test suite (298 tests: 264 API, 34 web) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -34,6 +34,7 @@ verified running against a real Postgres and a real browser.
 | Markdown rendering with syntax-labelled, copyable code blocks | working, tested |
 | Regenerate an answer, or retry it on a different model | working, tested |
 | Edit the last question in place and re-answer it | working, tested |
+| See which model a message would go to, and why not the others, before sending | working, tested |
 | Custom instructions: a standing system prompt you can switch off without losing | working, tested |
 | Health checks per component; per-model run/latency/cost stats | working |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |

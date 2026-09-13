@@ -113,8 +113,17 @@ rather than waiting for the next discovery run.
 
 ### `POST /api/route/preview`
 Same body as `/api/chat`. Returns the model that *would* be used, the fallback
-chain, and every rejected model with the rule that rejected it — without
-spending a token.
+chain, every rejected model with the rule that rejected it, the estimated input
+size, and any budget verdict — without spending a token.
+
+Pass the `conversationId` and the preview sizes the request the send would
+actually make, history and standing instructions included. Both go through the
+same `plan()`, so the preview and the send it previews cannot disagree; a
+conversation id that does not exist simply has no history, because the composer
+previews as you type, before anything is saved.
+
+The web UI calls this from the composer, debounced, and re-runs it whenever the
+routing mode, privacy or pinned model changes.
 
 ## Chat
 

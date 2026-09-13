@@ -9,13 +9,13 @@
  * are the router's own short operational notes (spec §81).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamChat, type ApiError, type Conversation, type Decision, type Instructions, type Model } from "../api.ts";
+import { api, streamChat, type ApiError, type Conversation, type Decision, type Instructions, type Model, type RoutePreview } from "../api.ts";
 import { ConversationList } from "./ConversationList.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
 
 /** Enough of the instructions to recognise them, without reprinting an essay. */
-function preview(text: string): string {
+function firstLineOf(text: string): string {
   const flat = text.trim().replace(/\s+/g, " ");
   return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat;
 }
@@ -65,10 +65,6 @@ export function Chat({
   // lazily), and useState only reads its argument once. Adopt it when it
   // shows up, but never clobber a conversation the user has already started.
   useEffect(() => {
-    void api.instructions().then(setInstructions).catch(() => setInstructions(null));
-  }, []);
-
-  useEffect(() => {
     if (initialTurns.length > 0) {
       setTurns((prev) => (prev.length === 0 ? initialTurns : prev));
     }
@@ -82,6 +78,17 @@ export function Chat({
   // A system that quietly rewrites its own behaviour and never tells you is
   // the hardest kind to debug.
   const [instructions, setInstructions] = useState<Instructions | null>(null);
+
+  /**
+   * Where the message being typed WOULD go (spec §149).
+   *
+   * /api/route/preview has existed since Phase 1 and nothing called it, so the
+   * one thing that makes a router legible — seeing the decision before you
+   * spend a token — was invisible. It re-runs on the draft and on every
+   * routing control, which is what makes "switch privacy to local_only and
+   * watch the cloud models drop out" something you can see rather than read.
+   */
+  const [preview, setPreview] = useState<RoutePreview | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -92,6 +99,36 @@ export function Chat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
+
+  useEffect(() => {
+    void api.instructions().then(setInstructions).catch(() => setInstructions(null));
+  }, []);
+
+  useEffect(() => {
+    const draft = input.trim();
+    // Nothing to route, and no preview while a real request is in flight —
+    // a stale "would go to" beside a running answer is worse than none.
+    if (draft.length === 0 || busy) { setPreview(null); return; }
+
+    let cancelled = false;
+    // Long enough that typing does not become a request per keystroke, short
+    // enough that the answer arrives before you reach for Send.
+    const timer = setTimeout(() => {
+      api
+        .previewRoute({
+          message: draft,
+          conversationId,
+          mode,
+          privacy,
+          modelId: pinnedModel === "" ? null : pinnedModel,
+        })
+        .then((p) => { if (!cancelled) setPreview(p); })
+        .catch(() => { if (!cancelled) setPreview(null); });
+    }, 400);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [input, busy, conversationId, mode, privacy, pinnedModel]);
+
 
   // Leaving the page mid-stream must cancel the server-side model call too.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -347,7 +384,7 @@ export function Chat({
         {instructions && instructions.enabled && instructions.text.trim().length > 0 ? (
           <p className="prose-sans mt-3 text-[11px] leading-relaxed text-dim">
             <span className="uppercase tracking-wider text-accent">Custom instructions</span>{" "}
-            are being sent with every turn: <span className="text-ink">{preview(instructions.text)}</span>{" "}
+            are being sent with every turn: <span className="text-ink">{firstLineOf(instructions.text)}</span>{" "}
             Change or switch them off in Settings.
           </p>
         ) : null}
@@ -403,6 +440,8 @@ export function Chat({
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); }
           }}
         />
+        <RoutePreviewStrip preview={preview} />
+
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-[11px] text-dim">
             {enabledModels.length} model{enabledModels.length === 1 ? "" : "s"} available
@@ -555,6 +594,65 @@ function AssistantTurn({
  * wrong, try again" and "try again somewhere else". Collapsing them into one
  * would make the second require fiddling with the request panel first.
  */
+/**
+ * What the router would do with the current draft, before anything is spent.
+ *
+ * Deliberately quiet: one line, and the reasoning behind a `details` the user
+ * opens when they want it. A dry run that shouts is a dry run people turn off.
+ */
+function RoutePreviewStrip({ preview }: { preview: RoutePreview | null }) {
+  if (!preview) return null;
+
+  const chosen = preview.decision.chosen;
+  const rejected = preview.decision.rejected;
+
+  return (
+    <div className="mt-2 border-t border-line pt-2 text-[11px]">
+      {chosen ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-dim">would go to</span>
+          <span className="text-ink">{chosen.displayName}</span>
+          {chosen.local ? (
+            <span className="text-live">local · free</span>
+          ) : (
+            <span className="text-dim">{chosen.providerId} · ~{formatCost(chosen.estimatedCostUsd)}</span>
+          )}
+          <span className="text-dim">· ~{preview.estimatedInputTokens.toLocaleString()} tok in</span>
+          {preview.budget.message ? <span className="text-wait">· {preview.budget.message}</span> : null}
+        </div>
+      ) : (
+        <p className="text-stop">
+          No model can take this request as configured. Open the reasons below, or relax privacy or the model pin.
+        </p>
+      )}
+
+      {chosen || rejected.length > 0 ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-dim">
+            why{rejected.length > 0 ? ` — and why not the other ${rejected.length}` : ""}
+          </summary>
+          {chosen && chosen.reasons.length > 0 ? (
+            <p className="mt-1 text-dim">Chosen because: {chosen.reasons.join(" · ")}</p>
+          ) : null}
+          {preview.decision.fallbacks.length > 0 ? (
+            <p className="mt-1 text-dim">
+              Then, if it fails: {preview.decision.fallbacks.map((f) => f.displayName).join(" → ")}
+            </p>
+          ) : null}
+          {rejected.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {rejected.map((r) => (
+                <li key={r.modelId} className="text-dim">{r.modelId}: {r.reason}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mt-1 text-dim">Nothing has been sent. This is the decision, not the answer.</p>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * A question, optionally editable in place.
  *

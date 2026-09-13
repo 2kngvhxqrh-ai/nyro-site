@@ -134,6 +134,61 @@ describe("custom instructions in the demo", () => {
   });
 });
 
+describe("the routing preview", () => {
+  async function preview(body: Record<string, unknown>): Promise<{
+    estimatedInputTokens: number;
+    decision: { chosen: { modelId: string; local: boolean } | null; rejected: Array<{ modelId: string }> };
+    budget: { message: string | null };
+  }> {
+    const res = await fetch("/api/route/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(res.status, 200);
+    return (await res.json()) as never;
+  }
+
+  /** EXACTLY the body Chat.tsx's preview effect builds. */
+  function previewBody(message: string, conversationId: string | null = null): Record<string, unknown> {
+    return { message, conversationId, mode: "auto", privacy: "normal", modelId: null };
+  }
+
+  test("returns a decision, a size and a budget field the strip reads", async () => {
+    const p = await preview(previewBody("preview smoke"));
+    assert.ok(p.decision.chosen, "no model chosen");
+    assert.ok(p.estimatedInputTokens > 0);
+    // The composer strip reads budget.message; an absent budget object would
+    // throw in the browser rather than render nothing.
+    assert.equal(p.budget.message, null);
+  });
+
+  test("local_only excludes the cloud models and says why", async () => {
+    const p = await preview({ ...previewBody("private draft"), privacy: "local_only" });
+    assert.equal(p.decision.chosen?.local, true);
+    assert.ok(p.decision.rejected.length > 0, "nothing was reported as excluded");
+  });
+
+  test("it counts the conversation it is previewing", async () => {
+    const bare = await preview(previewBody("same draft"));
+    const first = await stream(sendBody(`preview history ${"filler ".repeat(300)}`));
+    const id = String(first.find((f) => f.type === "done")!.data["conversationId"]);
+    const withHistory = await preview(previewBody("same draft", id));
+    assert.ok(
+      withHistory.estimatedInputTokens > bare.estimatedInputTokens + 200,
+      `preview ignored the conversation (${bare.estimatedInputTokens} -> ${withHistory.estimatedInputTokens})`,
+    );
+  });
+
+  test("previewing sends nothing", async () => {
+    const first = await stream(sendBody("preview sends nothing"));
+    const id = String(first.find((f) => f.type === "done")!.data["conversationId"]);
+    await preview(previewBody("a draft nobody submitted", id));
+    const messages = await messagesOf(id);
+    assert.deepEqual(messages.map((m) => m.role), ["user", "assistant"]);
+  });
+});
+
 describe("a failure inside the demo is visible", () => {
   test("a malformed body becomes an error response, not a rejected fetch", async () => {
     // Before this, a throw in the stream branch escaped the interceptor and

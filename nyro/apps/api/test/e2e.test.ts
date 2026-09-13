@@ -266,6 +266,74 @@ describe("routing preview", () => {
     assert.ok(r.decision.rejected.some((x) => x.modelId === "openai:gpt-4o-mini"));
   });
 
+  test("the preview counts the conversation it is previewing", async () => {
+    // It accepted a conversationId and passed [] as history, so it sized a
+    // one-message request while the send it previews carries up to twenty.
+    const fresh = await json<{ estimatedInputTokens: number }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({ message: "same draft", mode: "local_only" }),
+    });
+
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: `preview history ${"filler ".repeat(300)}`, mode: "local_only" }),
+    });
+
+    const withHistory = await json<{ estimatedInputTokens: number }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({ message: "same draft", conversationId: c.conversationId, mode: "local_only" }),
+    });
+
+    assert.ok(
+      withHistory.estimatedInputTokens > fresh.estimatedInputTokens + 200,
+      `preview ignored the conversation (${fresh.estimatedInputTokens} -> ${withHistory.estimatedInputTokens})`,
+    );
+  });
+
+  test("the preview and the send it previews agree on the request size", async () => {
+    // The first turn is long on purpose. With a short one the history is a
+    // rounding error and a loose tolerance band swallows the very bug this
+    // test exists to catch — confirmed by watching it pass with the fix out.
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: `agreement turn one ${"filler ".repeat(200)}`, mode: "local_only" }),
+    });
+
+    const p = await json<{ estimatedInputTokens: number }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({ message: "agreement turn two", conversationId: c.conversationId, mode: "local_only" }),
+    });
+
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "agreement turn two", conversationId: c.conversationId, mode: "local_only" }),
+    });
+
+    // What the adapter was actually handed, versus what the preview promised.
+    const sent = ollamaUp.received.at(-1)!.body as { messages: Array<{ role: string; content: string }> };
+    const sentChars = sent.messages.reduce((n, m) => n + m.content.length, 0);
+    // The estimator is ~4 characters per token. 15% absorbs per-message
+    // overhead without absorbing a missing history.
+    const impliedTokens = sentChars / 4;
+    assert.ok(
+      Math.abs(p.estimatedInputTokens - impliedTokens) < impliedTokens * 0.15 + 10,
+      `preview said ${p.estimatedInputTokens} tokens, the model was sent ~${Math.round(impliedTokens)}`,
+    );
+  });
+
+  test("a preview for a conversation that does not exist is not an error", async () => {
+    // The composer previews as you type, before anything is saved.
+    const r = await json<{ decision: { chosen: { modelId: string } | null } }>("/api/route/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        message: "unsaved draft",
+        conversationId: "00000000-0000-4000-8000-000000000000",
+        mode: "local_only",
+      }),
+    });
+    assert.ok(r.decision.chosen);
+  });
+
   test("an explicit model override is honoured", async () => {
     const r = await json<{ decision: { chosen: { modelId: string } } }>("/api/route/preview", {
       method: "POST",

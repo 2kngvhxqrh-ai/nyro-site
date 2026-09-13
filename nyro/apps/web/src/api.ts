@@ -80,6 +80,13 @@ export interface Decision {
   rejected: Array<{ modelId: string; reason: string }>;
 }
 
+/** A dry run: what the router would do, with nothing sent and nothing spent. */
+export interface RoutePreview {
+  estimatedInputTokens: number;
+  decision: Decision;
+  budget: { action: string; message: string | null; breaches: unknown[] };
+}
+
 /** A standing system prompt applied to every turn that does not supply its own. */
 export interface Instructions {
   enabled: boolean;
@@ -229,7 +236,7 @@ export const api = {
   resetModel: (id: string) =>
     request<{ model: Model }>(`/api/models/${encodeURIComponent(id)}/reset`, { method: "POST" }),
   previewRoute: (body: Record<string, unknown>) =>
-    request<{ estimatedInputTokens: number; decision: Decision }>("/api/route/preview", {
+    request<RoutePreview>("/api/route/preview", {
       method: "POST",
       body: JSON.stringify(body),
     }),

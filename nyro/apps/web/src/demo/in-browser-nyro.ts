@@ -352,8 +352,21 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
   }
 
   if (path === "/api/route/preview" && method === "POST") {
-    const { decision, estimatedInputTokens } = plan(body as unknown as ChatBody, []);
-    return jsonResponse(200, { estimatedInputTokens, decision: serializeDecision(decision) });
+    // The same history the real send would carry, for the same reason the
+    // server does it: a preview that ignores the conversation understates the
+    // request it is previewing.
+    const draft = body as unknown as ChatBody;
+    const stored = draft.conversationId ? conversations.get(draft.conversationId) ?? [] : [];
+    const history: ChatMessage[] = stored
+      .slice(-20)
+      .map((m) => ({ role: m.role as ChatMessage["role"], content: m.content }));
+    const { decision, estimatedInputTokens } = plan(draft, history);
+    return jsonResponse(200, {
+      estimatedInputTokens,
+      decision: serializeDecision(decision),
+      // The demo has no spend, so no limit is ever constraining a request.
+      budget: { action: "allow", message: null, breaches: [] },
+    });
   }
 
   if (path === "/api/conversations" && method === "GET") {

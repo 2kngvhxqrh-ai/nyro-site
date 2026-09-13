@@ -248,7 +248,9 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
         maxCostUsd: body.maxCostUsd,
         requiredCapabilities: body.requiredCapabilities,
       },
-      [],
+      // The same history the real send would carry. Previously `[]`, which
+      // made the preview describe a different request from the one it previews.
+      await deps.chat.historyFor(body.conversationId),
     );
     sendJson(ctx.res, 200, {
       estimatedInputTokens: estimateMessagesTokens(messages),
