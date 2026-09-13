@@ -72,7 +72,12 @@ export default defineConfig({
       output: {
         entryFileNames: "nyro.js",
         chunkFileNames: "nyro-[name].js",
-        assetFileNames: "nyro[extname]",
+        // "nyro[extname]" collapsed the eight .woff2 faces onto one filename.
+        // The stylesheet keeps its published path (the artifact already serves
+        // nyro.css); everything else is named after its source. Unhashed
+        // either way, so the published file list stays stable across builds.
+        assetFileNames: (info: { name?: string }) =>
+          info.name?.endsWith(".css") ? "nyro.css" : "nyro-[name][extname]",
         manualChunks: undefined,
       },
     },

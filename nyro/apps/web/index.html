@@ -10,16 +10,12 @@
     />
     <!--
       IBM Plex Mono is the face the NYRO identity already uses (see the
-      nyro-site page). It was declared in index.css but never loaded, so the UI
-      was silently falling back to ui-monospace. Plex Sans carries explanatory
-      prose, where a monospace face hurts reading speed.
+      nyro-site page); Plex Sans carries explanatory prose, where a monospace
+      face hurts reading speed. Both are served by NYRO itself from
+      src/fonts -- a page that phones a font CDN on every load is the wrong
+      default for a system that promises your conversations stay on your
+      machine, and an offline NYRO never got the typeface at all.
     -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
-    />
     <title>NYRO</title>
   </head>
   <body class="h-full">

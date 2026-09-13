@@ -60,6 +60,15 @@ A request marked `local_only` or `sensitive` cannot reach a cloud model —
 including via fallback, and including when the user explicitly names a cloud
 model. Enforced in `core/router.ts` and covered by six tests.
 
+### No third-party requests from the UI
+The web app loads nothing from anywhere but the origin serving it. It used to
+pull IBM Plex from `fonts.googleapis.com`, which told Google about every page
+load of a system whose whole claim is that your conversations stay on your
+machine — and left an offline NYRO without the typeface. The faces are now
+served from `apps/web/src/fonts`. Verified in a browser by recording every
+request the page makes: zero leave the origin, in both the served app and the
+browser demo.
+
 ## What is NOT protected yet
 
 Stated plainly, because a security section that only lists wins is misleading.

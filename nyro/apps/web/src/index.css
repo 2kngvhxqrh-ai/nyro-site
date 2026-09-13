@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Self-hosted IBM Plex. See src/fonts/plex.css for why it is not a CDN. */
+@import "./fonts/plex.css";
 
 @theme {
   --color-ground: #0a0c0b;

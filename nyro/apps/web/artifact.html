@@ -5,15 +5,10 @@
   file carries only NYRO's own head content and its mount point.
 
   nyro.css sets html/body/#root to full height and paints an explicit
-  background, so the page does not borrow the host's ground.
+  background, so the page does not borrow the host's ground. It also carries
+  the IBM Plex faces, which NYRO serves itself rather than fetching from a font
+  CDN -- so this page makes no third-party request at all.
 -->
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link
-  rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
-/>
-
 <link rel="stylesheet" href="./nyro.css" />
 
 <div id="root"></div>
