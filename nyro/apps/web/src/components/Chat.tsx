@@ -206,6 +206,46 @@ export function Chat({
     );
   }
 
+  /**
+   * Replace the last question and answer it again (spec §58).
+   *
+   * The mirror of regenerate: the prompt IS resent, because changing it is the
+   * whole point. The server rewinds the same way, so the transcript ends up as
+   * though the question had been asked correctly the first time rather than
+   * carrying a bad exchange forever.
+   */
+  async function editLast(text: string): Promise<void> {
+    const next = text.trim();
+    if (busy || !conversationId || next.length === 0) return;
+
+    setBusy(true);
+    setTurns((prev) => {
+      const out = [...prev];
+      if (out.at(-1)?.kind === "assistant") out.pop();
+      const lastUser = out.length - 1;
+      if (out[lastUser]?.kind === "user") out[lastUser] = { kind: "user", text: next };
+      return [...out, blankAssistantTurn()];
+    });
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    await runStream(
+      {
+        message: next,
+        editLast: true,
+        conversationId,
+        mode,
+        privacy,
+        modelId: pinnedModel === "" ? null : pinnedModel,
+      },
+      ac,
+    );
+    // The sidebar title is derived from the first question, so an edit of it
+    // renames the conversation server-side.
+    void refreshConversations();
+  }
+
   async function send(): Promise<void> {
     const message = input.trim();
     if (message.length === 0 || busy) return;
@@ -261,6 +301,13 @@ export function Chat({
   }
 
   const enabledModels = models.filter((m) => m.enabled);
+  // A rewind (regenerate or edit) needs a stored conversation to rewind, and
+  // nothing else. It was gated on `showHistory` -- whether the sidebar renders
+  // -- which hid two working behaviours from the browser demo, whose in-memory
+  // core implements both. The seeded demo transcript has no conversationId, so
+  // it correctly offers neither until you send something of your own.
+  const canRewind = conversationId !== null && !busy;
+  const lastUserIndex = turns.map((t) => t.kind).lastIndexOf("user");
 
   const chatColumn = (
     <div className="flex h-full min-h-0 flex-col gap-4">
@@ -319,9 +366,15 @@ export function Chat({
 
         {turns.map((turn, i) =>
           turn.kind === "user" ? (
-            <div key={i} className="ml-auto max-w-[85%] rounded border border-line bg-sunk px-4 py-2.5 text-sm text-ink">
-              {turn.text}
-            </div>
+            <UserTurn
+              key={i}
+              text={turn.text}
+              // Only the most recent question is editable. Rewriting an earlier
+              // one would invalidate every answer that came after it, and
+              // silently discarding those is not something a chat should do
+              // behind a pencil icon.
+              onEdit={i === lastUserIndex && canRewind ? (text) => void editLast(text) : undefined}
+            />
           ) : (
             <AssistantTurn
               key={i}
@@ -329,7 +382,7 @@ export function Chat({
               // Only the last answer can be regenerated: replacing an earlier
               // one would orphan every turn that followed it.
               onRetry={
-                showHistory && conversationId && i === turns.length - 1 && !busy && !turn.streaming
+                canRewind && i === turns.length - 1 && !turn.streaming
                   ? (modelId) => void regenerate(modelId)
                   : undefined
               }
@@ -502,6 +555,65 @@ function AssistantTurn({
  * wrong, try again" and "try again somewhere else". Collapsing them into one
  * would make the second require fiddling with the request panel first.
  */
+/**
+ * A question, optionally editable in place.
+ *
+ * Editing is offered on the last question only, and it is explicit: a pencil
+ * that silently replaced an answer would be indistinguishable from NYRO
+ * changing its mind on its own.
+ */
+function UserTurn({ text, onEdit }: { text: string; onEdit?: (text: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  if (draft !== null && onEdit) {
+    return (
+      <div className="ml-auto w-full max-w-[85%] rounded border border-accent/40 bg-sunk p-3">
+        <textarea
+          autoFocus
+          className={`${inputClass} min-h-[70px] resize-y text-sm`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setDraft(null);
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (draft.trim().length > 0) { onEdit(draft); setDraft(null); }
+            }
+          }}
+        />
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+          <span className="prose-sans mr-auto text-[11px] text-dim">
+            Replaces this question and the answer below it. Earlier turns are untouched.
+          </span>
+          <Button onClick={() => setDraft(null)}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={draft.trim().length === 0}
+            onClick={() => { onEdit(draft); setDraft(null); }}
+          >
+            Save and re-answer
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ml-auto flex max-w-[85%] items-start gap-2">
+      {onEdit ? (
+        <button
+          type="button"
+          className="mt-1 shrink-0 rounded border border-line px-2 py-1 text-[10px] uppercase tracking-wider text-dim transition hover:border-accent/40 hover:text-accent"
+          onClick={() => setDraft(text)}
+        >
+          Edit
+        </button>
+      ) : null}
+      <div className="rounded border border-line bg-sunk px-4 py-2.5 text-sm text-ink">{text}</div>
+    </div>
+  );
+}
+
 function RetryBar({
   onRetry,
   models,

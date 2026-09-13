@@ -65,6 +65,14 @@ describe("resolveSystemPrompt", () => {
     assert.equal(resolveSystemPrompt(stored({ enabled: false, text: "Speak Dutch." }), "Be terse."), "Be terse.");
   });
 
+  test("an omitted prompt means the same as null, not a crash", () => {
+    // The browser demo builds request bodies by hand with no validator. A body
+    // that simply left systemPrompt out reached this function as `undefined`
+    // and threw on `undefined.trim()`, which took the whole demo down.
+    assert.equal(resolveSystemPrompt(stored(), undefined), null);
+    assert.equal(resolveSystemPrompt(stored({ enabled: true, text: "Speak Dutch." }), undefined), "Speak Dutch.");
+  });
+
   test("an empty string from the caller means no prompt, not the stored one", () => {
     // "" is a caller who explicitly asked for no system prompt. Falling back to
     // the stored text there would make the empty string mean its opposite.

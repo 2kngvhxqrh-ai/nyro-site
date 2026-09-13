@@ -161,6 +161,23 @@ different model.
 If the previous attempt failed before an answer was stored, the conversation
 already ends with the user turn and nothing is deleted.
 
+### Editing the question (spec §58)
+Send `"editLast": true` with a `conversationId` and the corrected `message`.
+
+The exact opposite of a regenerate, and a separate flag for that reason: a
+regenerate must never take its prompt from the request, and an edit exists to
+change it. Sending both is a `400` rather than one silently winning.
+
+The trailing assistant message is deleted and the user turn before it is
+rewritten in place — nothing is appended, so the transcript reads as though the
+question had been asked correctly the first time. Earlier turns are untouched;
+only the most recent question can be edited, because rewriting an earlier one
+would invalidate every answer after it.
+
+If the edited turn was the conversation's first, its title is regenerated from
+the new text — the title was derived from that message, and leaving the old
+wording would misdescribe the conversation.
+
 ### `POST /api/chat`
 Blocks until complete. Returns content, the model used, usage, cost, the
 routing decision and every attempt made.

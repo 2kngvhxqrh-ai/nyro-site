@@ -14,6 +14,8 @@ export const chatRequestSchema = z.object({
   message: z.string().max(500_000).default(""),
   /** Re-answer the last turn rather than adding a new one (spec §58, §103). */
   regenerate: z.boolean().default(false),
+  /** Replace the last question with `message` and re-answer it (spec §58). */
+  editLast: z.boolean().default(false),
   conversationId: z.string().uuid().nullable().default(null),
   mode: z.enum(ROUTING_MODES).default("auto"),
   privacy: z.enum(PRIVACY_CLASSES).default("normal"),
@@ -29,10 +31,18 @@ export const chatRequestSchema = z.object({
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
 /** A normal turn still needs a message; only a regenerate may omit one. */
-export const chatRequestRefined = chatRequestSchema.refine(
-  (v) => v.regenerate || v.message.trim().length > 0,
-  { message: "message must not be empty", path: ["message"] },
-);
+export const chatRequestRefined = chatRequestSchema
+  .refine((v) => v.regenerate || v.message.trim().length > 0, {
+    message: "message must not be empty",
+    path: ["message"],
+  })
+  // The two are opposites: one insists the question is untouched, the other
+  // exists to change it. Rejecting the combination is clearer than silently
+  // letting one win.
+  .refine((v) => !(v.regenerate && v.editLast), {
+    message: "regenerate and editLast cannot both be set",
+    path: ["editLast"],
+  });
 
 /** Provider ids become part of model ids, so keep them URL- and id-safe. */
 const providerIdSchema = z

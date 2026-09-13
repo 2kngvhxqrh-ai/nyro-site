@@ -55,6 +55,15 @@ export interface ChatInput {
    * is never re-inserted, so it cannot be duplicated.
    */
   regenerate?: boolean;
+  /**
+   * Replace the last question with `message` and re-answer it (spec §58).
+   *
+   * The opposite of `regenerate`, and a separate flag for that reason: a
+   * regenerate must never take its prompt from the request, and an edit exists
+   * precisely to change it. One flag with two meanings would make invariant 16
+   * depend on a caller leaving a field unset.
+   */
+  editLast?: boolean;
   mode: RoutingMode;
   privacy: PrivacyClass;
   modelId: string | null;
@@ -268,10 +277,33 @@ export class ChatService {
       effectiveInput = { ...input, message: prepared.prompt };
     }
 
+    // An edit rewinds the same way, but rewrites the question rather than
+    // reusing it. Afterwards the two paths are identical, which is why both
+    // exclude the trailing turn from history below.
+    if (input.editLast) {
+      if (!input.conversationId) {
+        throw new NyroError("bad_request", "Nothing to edit: this conversation has not started yet.", {
+          component: "chat-service",
+        });
+      }
+      const prepared = await this.conversations.prepareEdit(conversationId, input.message);
+      if (!prepared) {
+        throw new NyroError("bad_request", "Nothing to edit in this conversation.", {
+          component: "chat-service",
+        });
+      }
+      // The title came from the first question. Editing it and leaving the old
+      // wording in the sidebar would misdescribe the conversation.
+      if (prepared.wasFirst) {
+        await this.conversations.setTitle(conversationId, titleFromMessage(input.message));
+      }
+    }
+
     const stored = await this.conversations.messages(conversationId);
-    // On a regenerate the prompt is already the last stored message, so it must
-    // not also be appended as history — that would send it twice.
-    const historySource = input.regenerate ? stored.slice(0, -1) : stored;
+    // On a regenerate or an edit the prompt is already the last stored message,
+    // so it must not also be appended as history — that would send it twice.
+    const rewound = input.regenerate === true || input.editLast === true;
+    const historySource = rewound ? stored.slice(0, -1) : stored;
     const history: ChatMessage[] = historySource
       .slice(-HISTORY_TURNS)
       .map((m) => ({ role: m.role, content: m.content }));
@@ -295,9 +327,10 @@ export class ChatService {
     });
 
     // The user turn is saved before execution so a crash mid-answer does not
-    // lose what the user typed (spec §141, §142). On a regenerate it is already
-    // there — re-adding it is the duplication bug this branch exists to avoid.
-    if (!input.regenerate) {
+    // lose what the user typed (spec §141, §142). After a rewind (regenerate or
+    // edit) it is already there — re-adding it is the duplication bug this
+    // branch exists to avoid.
+    if (!rewound) {
       await this.conversations.addMessage(conversationId, "user", input.message, null);
     }
 

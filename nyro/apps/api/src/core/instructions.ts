@@ -39,8 +39,14 @@ export const DEFAULT_INSTRUCTIONS: Instructions = { enabled: false, text: "" };
  *
  * Pure, so the rule can be tested without a database.
  */
-export function resolveSystemPrompt(stored: Instructions, requested: string | null): string | null {
-  if (requested !== null) {
+export function resolveSystemPrompt(
+  stored: Instructions,
+  // `undefined` means the same as `null`: not supplied. The API's zod schema
+  // defaults the field, but the browser demo has no validator, and a caller
+  // that simply omits it crashed here on `undefined.trim()`.
+  requested: string | null | undefined,
+): string | null {
+  if (requested !== null && requested !== undefined) {
     const trimmed = requested.trim();
     return trimmed.length > 0 ? trimmed : null;
   }

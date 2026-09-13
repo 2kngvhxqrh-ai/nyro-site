@@ -721,6 +721,71 @@ export class ConversationRepo {
     }
   }
 
+  /**
+   * Replace the last question and drop the answer it produced (spec §58).
+   *
+   * The mirror image of prepareRegenerate, and deliberately a separate call
+   * rather than a flag on it: a regenerate must never take its prompt from the
+   * request (invariant 16), and an edit is the one operation whose entire
+   * purpose is to change the question. Making them one call would mean the
+   * guarantee held only when a caller left a field unset.
+   *
+   * Returns whether the edited turn was the FIRST in the conversation, because
+   * the title was derived from it — leaving a fixed typo in the sidebar would
+   * be a visible lie about what the conversation now says.
+   */
+  async prepareEdit(
+    conversationId: string,
+    newContent: string,
+  ): Promise<{ wasFirst: boolean } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query<{ id: string; role: Role }>(
+        `select id, role from messages
+          where conversation_id = $1
+          order by created_at desc, id desc
+          limit 2`,
+        [conversationId],
+      );
+
+      const last = rows[0];
+      if (!last) { await client.query("rollback"); return null; }
+
+      let targetId: string;
+      if (last.role === "assistant") {
+        const prior = rows[1];
+        // An answer with no question before it is not an edit of anything.
+        if (!prior || prior.role !== "user") { await client.query("rollback"); return null; }
+        await client.query("delete from messages where id = $1", [last.id]);
+        targetId = prior.id;
+      } else if (last.role === "user") {
+        // The previous attempt failed before an answer was stored.
+        targetId = last.id;
+      } else {
+        await client.query("rollback");
+        return null;
+      }
+
+      await client.query("update messages set content = $2 where id = $1", [targetId, newContent]);
+
+      const { rows: firstRows } = await client.query<{ id: string }>(
+        `select id from messages where conversation_id = $1
+          order by created_at asc, id asc limit 1`,
+        [conversationId],
+      );
+      const wasFirst = firstRows[0]?.id === targetId;
+
+      await client.query("commit");
+      return { wasFirst };
+    } catch (err) {
+      await client.query("rollback").catch(() => undefined);
+      throw dbError(err, "preparing edit");
+    } finally {
+      client.release();
+    }
+  }
+
   async setTitle(conversationId: string, title: string): Promise<void> {
     try {
       await this.pool.query("update conversations set title = $2 where id = $1", [conversationId, title]);

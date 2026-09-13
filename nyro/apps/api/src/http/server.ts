@@ -511,6 +511,7 @@ function toChatInput(body: z.infer<typeof chatRequestSchema>) {
     conversationId: body.conversationId,
     message: body.message,
     regenerate: body.regenerate,
+    editLast: body.editLast,
     mode: body.mode,
     privacy: body.privacy,
     modelId: body.modelId,

@@ -71,8 +71,12 @@ function inferPreferred(message: string): Capability[] {
 }
 
 interface ChatBody {
-  message: string; regenerate?: boolean; conversationId: string | null; mode: string; privacy: string;
-  modelId: string | null; providerId: string | null; systemPrompt: string | null;
+  message: string; regenerate?: boolean; editLast?: boolean; conversationId: string | null; mode: string; privacy: string;
+  modelId: string | null; providerId: string | null;
+  // Optional because the demo has no validator between the UI and here: the
+  // chat form omits this field entirely, and typing it as required let a
+  // `undefined` reach code that expected `null`.
+  systemPrompt?: string | null;
   temperature: number | null; maxCostUsd: number | null; requiredCapabilities: Capability[];
 }
 
@@ -164,7 +168,25 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
     effective = { ...body, message: lastUser.content };
   }
 
-  const historySource = body.regenerate ? stored.slice(0, -1) : stored;
+  // An edit rewinds the same way but rewrites the question, so the demo shows
+  // the same transcript the server would produce.
+  if (body.editLast) {
+    if (stored.at(-1)?.role === "assistant") stored.pop();
+    const lastUser = stored.at(-1);
+    if (!lastUser || lastUser.role !== "user") {
+      return jsonResponse(400, {
+        error: { code: "bad_request", message: "Nothing to edit in this conversation.", component: "browser-demo", retryable: false, timestamp: new Date().toISOString() },
+      });
+    }
+    lastUser.content = body.message;
+    if (stored[0] === lastUser) {
+      const meta = conversationMeta.get(conversationId);
+      if (meta) meta.title = body.message.replace(/\s+/g, " ").trim().slice(0, 60);
+    }
+  }
+
+  const rewound = body.regenerate === true || body.editLast === true;
+  const historySource = rewound ? stored.slice(0, -1) : stored;
   const history: ChatMessage[] = historySource.slice(-20).map((m) => ({ role: m.role as ChatMessage["role"], content: m.content }));
   const { decision, estimatedInputTokens } = plan(effective, history);
 
@@ -193,7 +215,7 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
         return;
       }
 
-      if (!body.regenerate) {
+      if (!rewound) {
         stored.push({ id: uuid(), role: "user", content: body.message, modelId: null, createdAt: new Date().toISOString() });
       }
 
@@ -357,6 +379,17 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     return jsonResponse(200, instructions);
   }
 
+  if (path.startsWith("/api/conversations/") && path.endsWith("/messages") && method === "GET") {
+    // The demo's sidebar is hidden, so nothing in the page called this until
+    // the demo core grew its own tests. The data was always here; only the
+    // route was missing, which made the demo's API quietly narrower than the
+    // real one it is supposed to stand in for.
+    const id = path.slice("/api/conversations/".length, -"/messages".length);
+    const stored = conversations.get(decodeURIComponent(id));
+    if (!stored) return errorResponse(404, "not_found", `Conversation "${id}" does not exist.`);
+    return jsonResponse(200, { messages: stored });
+  }
+
   if (path === "/api/budget" && method === "GET") {
     // The demo has no real spend, so it reports zeros rather than inventing
     // numbers that would look like the user's own money.
@@ -465,10 +498,14 @@ export function installBrowserNyro(): void {
     if (!url.pathname.startsWith("/api/")) return realFetch(input as RequestInfo, init);
 
     const signal = init?.signal ?? null;
-    if (url.pathname === "/api/chat/stream") {
-      return streamChat(JSON.parse(String(init?.body ?? "{}")) as ChatBody, signal);
-    }
     try {
+      if (url.pathname === "/api/chat/stream") {
+        // Inside the try, deliberately. This branch used to sit outside it, so
+        // a throw here rejected the caller's fetch instead of becoming an
+        // error the UI could show -- the demo simply stopped answering, with
+        // nothing on screen to say why.
+        return streamChat(JSON.parse(String(init?.body ?? "{}")) as ChatBody, signal);
+      }
       return await handle(url, init);
     } catch (err) {
       return errorResponse(500, "internal", err instanceof Error ? err.message : String(err));

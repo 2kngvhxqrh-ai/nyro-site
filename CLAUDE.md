@@ -84,6 +84,10 @@ mode is the proof: it runs the UI unmodified against an in-browser core.
 `apps/web/src/demo/core-imports.ts` imports from `apps/api/src`. CI fails if
 the demo bundle stops containing the real router. A reimplementation would
 drift and start quietly lying about what NYRO does.
+Sharing the real modules also means the demo inherits their bugs, so
+`apps/web/test/demo-core.test.ts` runs its core in Node against **the exact
+request bodies `Chat.tsx` builds**. A tidier body than the app sends would have
+passed while the published demo answered nothing, which is what happened.
 
 **11. A spending limit must never block free work.**
 A request that is already local-only or sensitive costs nothing, so no budget
@@ -127,7 +131,11 @@ someone else's sanitiser.
 and send it to the model twice. `prepareRegenerate` deletes only the trailing
 assistant message and returns the question already on record — which is also
 what stops a regenerate from silently changing what was asked. Tested both
-ways.
+ways. `editLast` is the deliberate counterpart and a SEPARATE flag: changing
+the question is its entire purpose, so it rewrites the stored turn in place
+rather than appending. One flag with two meanings would make this invariant
+hold only when a caller left a field unset, which is why sending both is a
+400.
 
 **17. A measured number must be distinguishable from a guessed one.**
 Speed is measured from real runs once a model has enough of them; reasoning and

@@ -630,6 +630,147 @@ describe("regenerate (spec §58, §103)", () => {
     assert.match(((await res.json()) as { error: { message: string } }).error.message, /regenerat/i);
   });
 
+  // -------------------------------------------------------------------------
+  // Editing the question: the mirror of a regenerate.
+  // -------------------------------------------------------------------------
+
+  test("an edit replaces the question and the answer, adding nothing", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "waht is a rotuer", mode: "local_only" }),
+    });
+    assert.equal((await messages(c.conversationId)).length, 2);
+
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        editLast: true,
+        message: "what is a router",
+        mode: "local_only",
+      }),
+    });
+
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 2, `expected 2 messages, got ${after.map((m) => m.role).join(",")}`);
+    assert.equal(after[0]!.role, "user");
+    assert.equal(after[0]!.content, "what is a router");
+    assert.equal(after[1]!.role, "assistant");
+  });
+
+  test("an edit renames the conversation when it was the first question", async () => {
+    // The title is derived from the first message. Fixing a typo and leaving
+    // the old wording in the sidebar would misdescribe the conversation.
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "titel typo here", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        editLast: true,
+        message: "title typo fixed",
+        mode: "local_only",
+      }),
+    });
+    const { conversations } = await json<{ conversations: Array<{ id: string; title: string }> }>("/api/conversations");
+    const row = conversations.find((x) => x.id === c.conversationId);
+    assert.equal(row?.title, "title typo fixed");
+  });
+
+  test("editing a later question leaves the title alone", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "first question keeps the title", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, message: "second question", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        editLast: true,
+        message: "second question, rewritten",
+        mode: "local_only",
+      }),
+    });
+
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 4, "an edit reached back into earlier history");
+    assert.equal(after[0]!.content, "first question keeps the title");
+    assert.equal(after[2]!.content, "second question, rewritten");
+
+    const { conversations } = await json<{ conversations: Array<{ id: string; title: string }> }>("/api/conversations");
+    assert.equal(conversations.find((x) => x.id === c.conversationId)?.title, "first question keeps the title");
+  });
+
+  test("the edited question reaches the model exactly once, and the old one not at all", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "stale-marker", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        editLast: true,
+        message: "fresh-marker",
+        mode: "local_only",
+      }),
+    });
+    const sent = ollamaUp.received.at(-1)!.body as { messages: Array<{ content: string }> };
+    assert.equal(sent.messages.filter((m) => m.content === "fresh-marker").length, 1);
+    assert.equal(sent.messages.filter((m) => m.content === "stale-marker").length, 0);
+  });
+
+  test("regenerate and editLast cannot both be set", async () => {
+    // They are opposites -- one insists the question is untouched, the other
+    // exists to change it -- so the combination is rejected rather than
+    // silently resolved in one direction.
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "conflict check", mode: "local_only" }),
+    });
+    const res = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        regenerate: true,
+        editLast: true,
+        message: "something else",
+      }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test("an edit with no conversation is rejected", async () => {
+    const res = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ editLast: true, message: "nothing to edit" }),
+    });
+    assert.equal(res.status, 400);
+    assert.match(((await res.json()) as { error: { message: string } }).error.message, /edit/i);
+  });
+
+  test("an edit still requires a message", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "empty edit check", mode: "local_only" }),
+    });
+    const res = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, editLast: true, message: "   " }),
+    });
+    assert.equal(res.status, 400);
+    // ...and the conversation is untouched by the rejected request.
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 2);
+    assert.equal(after[0]!.content, "empty edit check");
+  });
+
   test("a normal turn still requires a message", async () => {
     const res = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: "" }) });
     assert.equal(res.status, 400);
