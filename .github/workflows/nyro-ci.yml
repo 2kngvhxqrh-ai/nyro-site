@@ -31,7 +31,7 @@ jobs:
   verify:
     name: typecheck · build · test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -78,14 +78,23 @@ jobs:
       - name: Build browser demo
         run: pnpm --filter @nyro/web build:demo
 
-      - name: Test (api)
+      - name: Test
+        # Both packages. The web suite carries the markdown parser's safety
+        # properties for rendering model output and the demo core's behaviour,
+        # so it is tested here rather than trusted. The browser layout suite is
+        # deliberately NOT in this glob — it is the next step.
         run: pnpm test
 
-      - name: Test (web)
-        # The markdown parser is the web package's own logic and carries the
-        # safety properties for rendering model output, so it is tested here
-        # rather than trusted.
-        run: pnpm --filter @nyro/web test
+      - name: Install Chromium for the layout tests
+        run: pnpm --filter @nyro/web exec playwright install --with-deps chromium
+
+      - name: Test (layout, in a real browser)
+        # A whole class of user-visible bug had no coverage and shipped: at
+        # phone width the app rendered 544px wide inside a 390px viewport and
+        # was clipped on both edges, while document.scrollWidth still equalled
+        # the viewport so nothing reported an overflow. No unit test can see
+        # that; a browser measuring real boxes can.
+        run: pnpm --filter @nyro/web test:layout
 
       - name: Verify the demo bundles the real router, not a copy
         # The demo's value rests entirely on it running the same code as the

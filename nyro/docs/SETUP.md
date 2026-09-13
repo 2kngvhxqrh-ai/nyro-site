@@ -109,7 +109,11 @@ then `usage` and `done`.
 
 ```bash
 pnpm test          # both suites; requires TEST_DATABASE_URL
-pnpm --filter @nyro/web test   # web suite (markdown parser); no database needed
+pnpm --filter @nyro/web test          # web suite; no database needed
+pnpm --filter @nyro/web test:layout   # layout in a real browser; no database
+                                      # needs Chromium:
+                                      #   pnpm --filter @nyro/web exec playwright install chromium
+                                      # or point NYRO_CHROMIUM at an existing binary
 pnpm typecheck
 pnpm build
 ```
