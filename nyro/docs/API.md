@@ -232,6 +232,11 @@ list, so "most recent" is load-bearing rather than cosmetic.
 ## Search (spec §63)
 
 ### `GET /api/search?q=…`
+
+Returns `{ query, results, more }`. `more` is true when the search matched more
+than the page returned — computed by fetching one extra row rather than
+inferred from `results.length === limit`, which would be wrong in exactly the
+case where it matters.
 Full-text search over conversation titles and message content, using Postgres's
 built-in text search — no extension, no search engine, no new dependency.
 

@@ -277,11 +277,11 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
   r.get("/api/search", async (ctx) => {
     const q = ctx.query.get("q") ?? "";
     if (q.trim().length === 0) {
-      sendJson(ctx.res, 200, { query: "", results: [] });
+      sendJson(ctx.res, 200, { query: "", results: [], more: false });
       return;
     }
-    const results = await deps.conversations.search(q);
-    sendJson(ctx.res, 200, { query: q, results });
+    const { results, more } = await deps.conversations.search(q);
+    sendJson(ctx.res, 200, { query: q, results, more });
   });
 
   r.put("/api/conversations/:id", async (ctx) => {

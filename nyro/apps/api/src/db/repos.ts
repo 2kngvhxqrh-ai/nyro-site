@@ -616,11 +616,19 @@ export class ConversationRepo {
     return terms.map((t) => `${t}:*`).join(" & ");
   }
 
-  async search(query: string, limit = 30): Promise<Array<{
-    id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
-  }>> {
+  async search(query: string, limit = 30): Promise<{
+    results: Array<{
+      id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
+    }>;
+    /** True when the search matched more than this page. */
+    more: boolean;
+  }> {
     const trimmed = query.trim();
-    if (trimmed.length === 0) return [];
+    if (trimmed.length === 0) return { results: [], more: false };
+    // One extra row is the cheap exact answer to "are there more?". Inferring
+    // it from `results.length === limit` is wrong for a search that matched
+    // exactly `limit`, which is the one case where the claim would be a lie.
+    const fetch = limit + 1;
     const tsq = ConversationRepo.prefixQuery(trimmed);
     // A query of pure punctuation still matches titles containing it.
     if (tsq === null) return this.searchTitlesOnly(trimmed, limit);
@@ -657,25 +665,32 @@ export class ConversationRepo {
              or c.title ilike '%' || $1 || '%'
           order by rank desc, c.updated_at desc
           limit $3`,
-        [trimmed, tsq, limit],
+        [trimmed, tsq, fetch],
       );
-      return rows.map((r) => ({
+      const page = rows.slice(0, limit);
+      return {
+        more: rows.length > limit,
+        results: page.map((r) => ({
         id: r.id,
         title: r.title,
         updatedAt: r.updated_at.toISOString(),
         messageCount: r.message_count,
         snippet: r.snippet,
         matches: r.matches,
-      }));
+      })),
+      };
     } catch (err) {
       throw dbError(err, "searching conversations");
     }
   }
 
   /** Fallback when a query has no searchable words (e.g. only punctuation). */
-  private async searchTitlesOnly(query: string, limit: number): Promise<Array<{
-    id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
-  }>> {
+  private async searchTitlesOnly(query: string, limit: number): Promise<{
+    results: Array<{
+      id: string; title: string; updatedAt: string; messageCount: number; snippet: string | null; matches: number;
+    }>;
+    more: boolean;
+  }> {
     try {
       const { rows } = await this.pool.query<{ id: string; title: string; updated_at: Date; message_count: number }>(
         `select c.id, c.title, c.updated_at,
@@ -684,16 +699,20 @@ export class ConversationRepo {
           where c.title ilike '%' || $1 || '%'
           order by c.updated_at desc
           limit $2`,
-        [query, limit],
+        [query, limit + 1],
       );
-      return rows.map((r) => ({
+      const page = rows.slice(0, limit);
+      return {
+        more: rows.length > limit,
+        results: page.map((r) => ({
         id: r.id,
         title: r.title,
         updatedAt: r.updated_at.toISOString(),
         messageCount: r.message_count,
         snippet: null,
         matches: 0,
-      }));
+      })),
+      };
     } catch (err) {
       throw dbError(err, "searching conversation titles");
     }

@@ -444,7 +444,7 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
 
   if (path === "/api/search") {
     // No database to search in the demo, and inventing hits would be a lie.
-    return jsonResponse(200, { query: url.searchParams.get("q") ?? "", results: [] });
+    return jsonResponse(200, { query: url.searchParams.get("q") ?? "", results: [], more: false });
   }
 
   if (path.startsWith("/api/export")) {

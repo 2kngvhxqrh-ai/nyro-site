@@ -77,6 +77,9 @@ export function ConversationList({
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
+  // Search returns the best matches, not all of them. Saying so is the
+  // difference between "that is everything" and "that is the top of it".
+  const [moreHits, setMoreHits] = useState(false);
   const searchSeq = useRef(0);
 
   // Debounced so typing does not fire a query per keystroke. The sequence
@@ -89,8 +92,18 @@ export function ConversationList({
     const seq = ++searchSeq.current;
     const timer = setTimeout(() => {
       void api.search(q)
-        .then((r) => { if (seq === searchSeq.current) { setHits(r); setSearching(false); } })
-        .catch(() => { if (seq === searchSeq.current) { setHits([]); setSearching(false); } });
+        .then((r) => {
+          if (seq !== searchSeq.current) return;
+          setHits(r.results);
+          setMoreHits(r.more);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (seq !== searchSeq.current) return;
+          setHits([]);
+          setMoreHits(false);
+          setSearching(false);
+        });
     }, 220);
     return () => clearTimeout(timer);
   }, [query]);
@@ -269,6 +282,12 @@ export function ConversationList({
             Clear search
           </button>
         </footer>
+      ) : null}
+
+      {hits !== null && moreHits ? (
+        <p className="prose-sans shrink-0 border-t border-line px-3 py-2 text-[10px] leading-relaxed text-dim">
+          These are the best matches, not all of them. Narrow the search to see the rest.
+        </p>
       ) : null}
 
       {hits === null && total > conversations.length ? (

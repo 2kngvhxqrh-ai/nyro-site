@@ -729,6 +729,39 @@ describe("a conversation longer than the page limit", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("search says when it is showing only the best matches", () => {
+  // Search returns ranked results, so a cap is reasonable. Not saying so is
+  // not: with invariant 13 now claiming that any truncated list says so,
+  // leaving search silent would make the invariant itself untrue.
+  before(async () => {
+    const convs: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      convs.push(`(gen_random_uuid(), 'searchcap subject ${i}', now() - interval '${40 - i} minutes', now() - interval '${40 - i} minutes')`);
+    }
+    await app.pool.query(`insert into conversations (id, title, created_at, updated_at) values ${convs.join(",")}`);
+  });
+
+  test("a query matching more than one page reports `more`", async () => {
+    const r = await json<{ results: unknown[]; more: boolean }>("/api/search?q=searchcap");
+    assert.equal(r.results.length, 30, "the page size changed");
+    assert.equal(r.more, true, "40 matches were capped at 30 without saying so");
+  });
+
+  test("a query that fits does not", async () => {
+    const r = await json<{ results: unknown[]; more: boolean }>("/api/search?q=searchcap%20subject%207");
+    assert.ok(r.results.length > 0, "the query matched nothing, so this proves nothing");
+    assert.ok(r.results.length < 30);
+    assert.equal(r.more, false);
+  });
+
+  test("an empty query is not a truncated one", async () => {
+    const r = await json<{ results: unknown[]; more: boolean }>("/api/search?q=");
+    assert.deepEqual(r.results, []);
+    assert.equal(r.more, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("the export contains everything, not a page of it", () => {
   // The export is what makes the project's stated promise true: "you have to
   // be able to read everything the system knows in a text editor, with nothing

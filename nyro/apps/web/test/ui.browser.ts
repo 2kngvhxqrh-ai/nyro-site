@@ -517,3 +517,42 @@ describe("a conversation list longer than one page", () => {
     }
   });
 });
+
+describe("search that matched more than it shows", () => {
+  test("says these are the best matches, not all of them", async () => {
+    const hits = Array.from({ length: 30 }, (_, i) => ({
+      id: `${String(i).padStart(8, "0")}-1111-4111-8111-111111111111`,
+      title: `match ${i}`,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      messageCount: 2,
+      snippet: "a <b>match</b> in the text",
+      matches: 1,
+    }));
+    const page = await open(1440, { "/api/search": { query: "match", results: hits, more: true } });
+    try {
+      await page.getByPlaceholder(/Search conversations/).fill("match");
+      await page.waitForTimeout(900);
+      const text = await page.locator("aside").innerText();
+      assert.match(text, /best matches, not all of them/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("says nothing when the search fits", async () => {
+    const page = await open(1440, {
+      "/api/search": {
+        query: "match",
+        results: [{ id: "a", title: "only match", updatedAt: "2026-01-01T00:00:00.000Z", messageCount: 2, snippet: null, matches: 1 }],
+        more: false,
+      },
+    });
+    try {
+      await page.getByPlaceholder(/Search conversations/).fill("match");
+      await page.waitForTimeout(900);
+      assert.doesNotMatch(await page.locator("aside").innerText(), /best matches/);
+    } finally {
+      await page.close();
+    }
+  });
+});

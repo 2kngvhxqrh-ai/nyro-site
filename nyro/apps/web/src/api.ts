@@ -245,8 +245,7 @@ export const api = {
   /** Returns a page of conversations AND how many exist, which can be more. */
   conversations: () => request<{ conversations: Conversation[]; total: number }>("/api/conversations"),
   search: (q: string) =>
-    request<{ query: string; results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`)
-      .then((r) => r.results),
+    request<{ query: string; results: SearchHit[]; more: boolean }>(`/api/search?q=${encodeURIComponent(q)}`),
   renameConversation: (id: string, title: string) =>
     request<{ id: string; title: string }>(`/api/conversations/${encodeURIComponent(id)}`, {
       method: "PUT",

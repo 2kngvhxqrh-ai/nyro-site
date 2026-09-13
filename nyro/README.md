@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (310 tests: 273 API, 37 web, plus 16 browser checks) and was
+Everything in this list is covered by the test suite (313 tests: 276 API, 37 web, plus 18 browser checks) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -29,7 +29,7 @@ verified running against a real Postgres and a real browser.
 | Stop button that genuinely cancels the upstream model call, keeping what was written | working, tested |
 | Conversation persistence, with history you can browse, resume, rename and delete | working, tested |
 | Export everything you own to JSON or readable Markdown, with no API keys — and it really is everything | working, tested |
-| Full-text search across every conversation, with highlighted snippets | working, tested |
+| Full-text search across every conversation, with highlighted snippets, saying when it capped | working, tested |
 | Correct a model's price or context window; discovery will not overwrite it | working, tested |
 | Markdown rendering with syntax-labelled, copyable code blocks | working, tested |
 | Regenerate an answer, or retry it on a different model | working, tested |
