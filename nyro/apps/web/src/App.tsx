@@ -125,7 +125,13 @@ export function App() {
         </div>
       ) : null}
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      {/* overflow-x-hidden is explicit: `overflow-y:auto` alone computes
+          overflow-x to `auto`, so a few stray pixels — the vertical
+          scrollbar's own width, mostly — let the whole content area be nudged
+          sideways. Anything legitimately wider than the screen (the Models and
+          Health tables) carries its own horizontal scroller, so nothing here
+          needs the page to scroll. */}
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {view === "chat" ? (
           <Chat
             models={models}

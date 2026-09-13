@@ -39,10 +39,14 @@ export function Health({
             </div>
             <ul className="space-y-1.5">
               {health.components.map((c) => (
-                <li key={c.name} className="flex items-center gap-2 border-b border-line/50 pb-1.5 text-xs">
+                // flex-wrap and min-w-0: a provider's detail string is arbitrary
+                // text from its own health check, so at phone width the row has
+                // to be allowed to wrap rather than push the latency off the
+                // side of the app.
+                <li key={c.name} className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line/50 pb-1.5 text-xs">
                   <Dot state={c.state} />
                   <span className="text-ink">{c.name}</span>
-                  <span className="text-dim">{c.detail}</span>
+                  <span className="min-w-0 break-words text-dim">{c.detail}</span>
                   {c.latencyMs !== null ? <span className="ml-auto text-[11px] text-dim">{c.latencyMs} ms</span> : null}
                 </li>
               ))}
@@ -66,7 +70,11 @@ export function Health({
               <Stat label="Avg latency" value={`${stats.avgLatencyMs} ms`} />
               <Stat label="Cost" value={formatCost(stats.totalCostUsd)} />
             </div>
-            <table className="w-full text-left text-xs">
+            {/* Its own scroller. Without one a table wider than a phone makes the
+                whole main area scroll sideways, taking the header and the tab
+                bar with it. Models already does this; this one did not. */}
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[26rem] text-left text-xs">
               <thead className="text-[10px] uppercase tracking-wider text-dim">
                 <tr className="border-b border-line">
                   <th className="py-2 pr-3">Model</th>
@@ -90,6 +98,7 @@ export function Health({
                 ))}
               </tbody>
             </table>
+            </div>
             <p className="mt-3 text-[11px] text-dim">
               Costs use the price table in the model registry, and token counts come from each provider's own
               response. Providers that report no usage contribute 0 rather than an estimate. Stopping a

@@ -405,7 +405,8 @@ function MeasuredRoutingPanel() {
       </p>
 
       {measured.length > 0 ? (
-        <table className="mt-3 w-full text-left text-xs">
+        <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[30rem] text-left text-xs">
           <thead className="text-[10px] uppercase tracking-wider text-dim">
             <tr className="border-b border-line">
               <th className="py-2 pr-3">Model</th>
@@ -429,6 +430,7 @@ function MeasuredRoutingPanel() {
             ))}
           </tbody>
         </table>
+        </div>
       ) : (
         <Empty>No model has enough runs yet. Use NYRO and measurements will appear here.</Empty>
       )}

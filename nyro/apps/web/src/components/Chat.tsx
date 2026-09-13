@@ -353,7 +353,7 @@ export function Chat({
   const lastUserIndex = turns.map((t) => t.kind).lastIndexOf("user");
 
   const chatColumn = (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-4">
       <Panel title="Request">
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
@@ -469,9 +469,17 @@ export function Chat({
 
   // The sidebar sits beside the chat on wide screens and above it on narrow
   // ones, where it is capped so it cannot push the composer off the screen.
+  //
+  // min-w-0 on BOTH children is load-bearing, not tidiness. A grid item
+  // defaults to min-width:auto, so the track refuses to shrink below its
+  // content's min-content width — and a conversation title is `truncate`,
+  // which means white-space:nowrap, which means its min-content is the whole
+  // untruncated title. At phone width that dragged the single column out to
+  // 544px inside a 390px viewport and clipped the app on both edges. The
+  // lg: track already says minmax(0,…); the stacked one had nothing.
   return (
     <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <div className="max-h-[40vh] min-h-0 lg:max-h-none">
+      <div className="min-w-0 max-h-[40vh] min-h-0 overflow-hidden lg:max-h-none">
         <ConversationList
           conversations={conversations}
           activeId={conversationId}

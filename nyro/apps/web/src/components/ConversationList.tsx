@@ -103,7 +103,12 @@ export function ConversationList({
   }
 
   return (
-    <aside className="flex min-h-0 flex-col rounded border border-line bg-panel">
+    // h-full is what makes the scroll region below work. `flex-1
+    // overflow-y-auto` only scrolls inside a bounded box; with the aside's
+    // height left to its content it simply grew, and at phone width — where
+    // the wrapper caps it at 40vh — the list painted straight over the chat
+    // column underneath.
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded border border-line bg-panel">
       <header className="flex items-center justify-between border-b border-line px-3 py-2.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-dim">
           Conversations
