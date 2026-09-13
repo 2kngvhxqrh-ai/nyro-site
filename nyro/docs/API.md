@@ -223,6 +223,12 @@ event, not an HTTP status.
   rewrites your spend or the performance measurements derived from it.
 - `GET /api/conversations/:id/messages`
 
+### `GET /api/conversations/:id/messages`
+Returns `{ messages, total }`. `messages` is the most recent page (200), oldest
+first; `total` is how many exist, so a client can say what it is not showing
+rather than simply ending early. The model's context is sliced from this same
+list, so "most recent" is load-bearing rather than cosmetic.
+
 ## Search (spec §63)
 
 ### `GET /api/search?q=…`

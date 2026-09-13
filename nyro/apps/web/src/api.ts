@@ -254,9 +254,9 @@ export const api = {
     }),
   deleteConversation: (id: string) =>
     request<{ deleted: boolean }>(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Returns the transcript AND how many messages exist, which can be more. */
   messages: (id: string) =>
-    request<{ messages: StoredMessage[] }>(`/api/conversations/${encodeURIComponent(id)}/messages`)
-      .then((r) => r.messages),
+    request<{ messages: StoredMessage[]; total: number }>(`/api/conversations/${encodeURIComponent(id)}/messages`),
   budget: () => request<BudgetState>("/api/budget"),
   setBudget: (config: BudgetConfig) =>
     request<{ config: BudgetConfig }>("/api/budget", { method: "PUT", body: JSON.stringify(config) }),

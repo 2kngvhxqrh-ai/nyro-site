@@ -302,7 +302,11 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
     if (!(await deps.conversations.exists(id))) {
       throw new NyroError("model_not_found", "Conversation not found.", { component: "http" });
     }
-    sendJson(ctx.res, 200, { messages: await deps.conversations.messages(id) });
+    const messages = await deps.conversations.messages(id);
+    const total = await deps.conversations.messageCount(id);
+    // `total` lets the client say "showing the last N of M" instead of simply
+    // ending early, which is indistinguishable from the conversation ending.
+    sendJson(ctx.res, 200, { messages, total });
   });
 
   // ---- Chat ---------------------------------------------------------------

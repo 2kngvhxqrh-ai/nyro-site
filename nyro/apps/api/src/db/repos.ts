@@ -505,11 +505,24 @@ export class ConversationRepo {
     limit = 200,
   ): Promise<Array<ChatMessage & { id: string; modelId: string | null; createdAt: string; finishReason: string | null }>> {
     try {
+      // The MOST RECENT `limit`, returned oldest-first.
+      //
+      // This used to be `order by created_at asc limit $2`, which returns the
+      // OLDEST rows. Past the limit a conversation silently froze: the UI
+      // showed a transcript ending long ago, and because the model's context
+      // is sliced from this same list, it answered with the wrong turns
+      // entirely — while regenerate and edit, which query desc, operated on
+      // the real last message the UI was not even displaying.
       const { rows } = await this.pool.query<{
         id: string; role: Role; content: string; model_id: string | null; finish_reason: string | null; created_at: Date;
       }>(
-        `select id, role, content, model_id, finish_reason, created_at from messages
-          where conversation_id = $1 order by created_at asc limit $2`,
+        `select * from (
+           select id, role, content, model_id, finish_reason, created_at from messages
+            where conversation_id = $1
+            order by created_at desc, id desc
+            limit $2
+         ) recent
+         order by created_at asc, id asc`,
         [conversationId, limit],
       );
       return rows.map((r) => ({
@@ -641,6 +654,19 @@ export class ConversationRepo {
       }));
     } catch (err) {
       throw dbError(err, "searching conversation titles");
+    }
+  }
+
+  /** Total stored messages, so a truncated transcript can say what it is hiding. */
+  async messageCount(conversationId: string): Promise<number> {
+    try {
+      const { rows } = await this.pool.query<{ n: string }>(
+        "select count(*)::text as n from messages where conversation_id = $1",
+        [conversationId],
+      );
+      return Number(rows[0]?.n ?? 0);
+    } catch (err) {
+      throw dbError(err, "counting messages");
     }
   }
 

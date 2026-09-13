@@ -445,3 +445,50 @@ describe("when the API goes away mid-session", () => {
     }
   });
 });
+
+describe("a transcript longer than one page", () => {
+  test("says how many earlier messages are not shown", async () => {
+    // A transcript that simply starts mid-conversation is indistinguishable
+    // from one that began there. Worse, the version of this that returned the
+    // OLDEST page made the transcript end early instead, which looks exactly
+    // like a conversation you never continued.
+    const messages = Array.from({ length: 200 }, (_, i) => ({
+      id: `${String(i).padStart(8, "0")}-1111-4111-8111-111111111111`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: i % 2 === 0 ? `question ${i}` : `answer ${i}`,
+      modelId: i % 2 === 0 ? null : "ollama:llama3.2:1b",
+      finishReason: null,
+    }));
+    const page = await open(1440, {
+      "/api/conversations/00000000-1111-4111-8111-111111111111/messages": { messages, total: 260 },
+    });
+    try {
+      await page.getByRole("button", { name: /How do I refactor/ }).first().click();
+      await page.waitForTimeout(900);
+      const text = await page.locator("main").innerText();
+      assert.match(text, /60 earlier messages are not shown/);
+      assert.match(text, /still stored/);
+      // And the newest turn is the one at the bottom.
+      assert.match(text, /answer 199/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("says nothing when the whole conversation fits", async () => {
+    const messages = [
+      { id: "a", role: "user", content: "short question", modelId: null, finishReason: null },
+      { id: "b", role: "assistant", content: "short answer", modelId: "ollama:llama3.2:1b", finishReason: null },
+    ];
+    const page = await open(1440, {
+      "/api/conversations/00000000-1111-4111-8111-111111111111/messages": { messages, total: 2 },
+    });
+    try {
+      await page.getByRole("button", { name: /How do I refactor/ }).first().click();
+      await page.waitForTimeout(900);
+      assert.doesNotMatch(await page.locator("main").innerText(), /earlier message/);
+    } finally {
+      await page.close();
+    }
+  });
+});

@@ -412,7 +412,9 @@ async function handle(url: URL, init: RequestInit | undefined): Promise<Response
     const id = path.slice("/api/conversations/".length, -"/messages".length);
     const stored = conversations.get(decodeURIComponent(id));
     if (!stored) return errorResponse(404, "not_found", `Conversation "${id}" does not exist.`);
-    return jsonResponse(200, { messages: stored });
+    // Same shape as the server: the client reads `total` to say how many
+    // earlier messages it is not showing.
+    return jsonResponse(200, { messages: stored, total: stored.length });
   }
 
   if (path === "/api/budget" && method === "GET") {

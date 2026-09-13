@@ -95,6 +95,9 @@ export function Chat({
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // A transcript that simply starts mid-conversation is indistinguishable from
+  // one that began there, so say how many turns are above the top.
+  const [olderHidden, setOlderHidden] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -157,7 +160,8 @@ export function Chat({
     if (busy) return;
     setLoadingHistory(true);
     try {
-      const stored = await api.messages(id);
+      const { messages: stored, total } = await api.messages(id);
+      setOlderHidden(Math.max(0, total - stored.length));
       setTurns(
         stored.map((m) =>
           m.role === "user"
@@ -190,6 +194,7 @@ export function Chat({
     if (busy) return;
     setTurns([]);
     setConversationId(null);
+    setOlderHidden(0);
   }
 
   function patchLast(fn: (t: Extract<Turn, { kind: "assistant" }>) => void): void {
@@ -405,6 +410,13 @@ export function Chat({
                 : "Send a message. NYRO will pick a model and show you why."}
             </Empty>
           </Panel>
+        ) : null}
+
+        {olderHidden > 0 ? (
+          <p className="prose-sans rounded border border-line bg-sunk px-3 py-2 text-[11px] text-dim">
+            {olderHidden.toLocaleString()} earlier message{olderHidden === 1 ? " is" : "s are"} not shown. They are still
+            stored, and the whole conversation is in your export.
+          </p>
         ) : null}
 
         {turns.map((turn, i) =>

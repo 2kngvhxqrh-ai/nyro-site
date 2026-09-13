@@ -647,6 +647,88 @@ describe("failure handling and fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("a conversation longer than the page limit", () => {
+  // The default limit is 200. Past it, `order by created_at asc limit 200`
+  // returned the OLDEST 200: the transcript froze, and the model's context —
+  // sliced from the same list — came from the wrong end of the conversation,
+  // while regenerate and edit (which query desc) acted on a message the UI was
+  // not showing. Silent, and worse the longer you used it.
+  let conversationId: string;
+
+  before(async () => {
+    const c = await json<{ conversationId: string }>("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify({ title: "a long conversation" }),
+    });
+    conversationId = c.conversationId;
+
+    // Seeded in the PAST, and deliberately so: with future timestamps a real
+    // turn sent later sorts into the middle of the history, which is not a
+    // conversation anyone can have and made this suite test the wrong thing.
+    const values: string[] = [];
+    for (let i = 1; i <= 106; i++) {
+      const ago = (120 - i) * 10;
+      values.push(`(gen_random_uuid(), '${conversationId}', 'user', 'long turn ${i}', null, now() - interval '${ago} seconds')`);
+      values.push(`(gen_random_uuid(), '${conversationId}', 'assistant', 'long answer ${i}', 'ollama:llama3.2:1b', now() - interval '${ago - 1} seconds')`);
+    }
+    await app.pool.query(
+      `insert into messages (id, conversation_id, role, content, model_id, created_at) values ${values.join(",")}`,
+    );
+  });
+
+  test("returns the NEWEST page, not the oldest, and says how many exist", async () => {
+    const r = await json<{ messages: Array<{ content: string }>; total: number }>(
+      `/api/conversations/${conversationId}/messages`,
+    );
+    assert.equal(r.total, 212, "the total does not match what was stored");
+    assert.equal(r.messages.length, 200, "the page size changed");
+    assert.equal(r.messages.at(-1)!.content, "long answer 106", "the newest message is missing");
+    assert.ok(
+      !r.messages.some((m) => m.content === "long turn 1"),
+      "the oldest message is still being returned, so this is the wrong end",
+    );
+  });
+
+  test("the model is sent the true last turns, not the first ones", async () => {
+    const before = ollamaUp.received.length;
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, message: "what were we saying", mode: "local_only" }),
+    });
+    const sent = ollamaUp.received.slice(before).find((r) => r.path === "/api/chat")!;
+    const contents = (sent.body as { messages: Array<{ content: string }> }).messages.map((m) => m.content);
+
+    assert.ok(contents.includes("long answer 106"), "the most recent turn was not in the context");
+    assert.ok(
+      !contents.includes("long turn 1"),
+      "the context came from the start of the conversation instead of the end",
+    );
+  });
+
+  test("regenerate acts on the message the transcript actually ends with", async () => {
+    const listed = await json<{ messages: Array<{ role: string; content: string }>; total: number }>(
+      `/api/conversations/${conversationId}/messages`,
+    );
+    const lastShown = listed.messages.at(-1)!;
+    assert.equal(lastShown.role, "assistant");
+
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, regenerate: true, mode: "local_only" }),
+    });
+
+    const after = await json<{ messages: Array<{ role: string; content: string }>; total: number }>(
+      `/api/conversations/${conversationId}/messages`,
+    );
+    // Replaced, not appended: the stored count is unchanged and the question
+    // above it is still the one the user can see.
+    assert.equal(after.total, listed.total, "a regenerate changed how many messages are stored");
+    assert.equal(after.messages.at(-1)!.role, "assistant");
+    assert.equal(after.messages.at(-2)!.content, "what were we saying");
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("regenerate (spec §58, §103)", () => {
   async function messages(id: string): Promise<Array<{ role: string; content: string; modelId: string | null }>> {
     return (await json<{ messages: Array<{ role: string; content: string; modelId: string | null }> }>(
