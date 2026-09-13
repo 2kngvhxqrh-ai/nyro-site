@@ -118,6 +118,19 @@ pnpm typecheck
 pnpm build
 ```
 
+### Every command here has been run
+
+Not inferred from the scripts: `setup:env` (twice, to confirm it will not
+overwrite an existing key), `migrate`, `start`, `dev`, `build`, `typecheck`,
+`test`, `test:ui` and `smoke` — including `smoke -- <provider>` — were each
+executed and their output checked. `dev` was verified in a browser end to end,
+because a Vite proxy that buffers would break SSE streaming in development
+only, and this one does not: tokens arrive incrementally through it exactly as
+they do from the API directly.
+
+That audit is what found `pnpm setup` running pnpm's own builtin instead of
+this package's script.
+
 ### Proving it works against the real vendors
 
 ```bash

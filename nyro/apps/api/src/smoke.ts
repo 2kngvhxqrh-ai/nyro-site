@@ -128,7 +128,12 @@ async function main(): Promise<void> {
     line(`Live smoke test — ${targets.length} provider(s): ${targets.map((p) => p.id).join(", ")}`);
     line(`One model listing and one ~${MAX_OUTPUT_TOKENS}-token completion each.`);
     if (paid.length > 0) {
-      line(`${paid.length} of them are paid providers, so this will spend a small amount of real money.`);
+      // Reads correctly for one as well as many: this is the sentence that
+      // comes immediately before spending someone's money.
+      line(
+        `${paid.length} paid provider${paid.length === 1 ? "" : "s"} in that list, ` +
+          "so this will spend a small amount of real money.",
+      );
     }
     line("");
 
