@@ -14,7 +14,7 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (220 tests) and was
+Everything in this list is covered by the test suite (243 tests: 220 API, 23 web) and was
 verified running against a real Postgres and a real browser.
 
 | Capability | State |
@@ -31,6 +31,7 @@ verified running against a real Postgres and a real browser.
 | Export everything you own to JSON or readable Markdown, with no API keys | working, tested |
 | Full-text search across every conversation, with highlighted snippets | working, tested |
 | Correct a model's price or context window; discovery will not overwrite it | working, tested |
+| Markdown rendering with syntax-labelled, copyable code blocks | working, tested |
 | Health checks per component; per-model run/latency/cost stats | working |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |
 | Task-specific routing rules ("coding goes to Claude") | working, tested |

@@ -34,7 +34,7 @@ working Stop button, provider/model management, health and run statistics.
 
 ## Tested
 
-220 automated tests, run repeatedly with no flakes.
+243 automated tests (220 API, 23 web), run repeatedly with no flakes.
 
 | Suite | Tests | What it protects |
 |---|---|---|
@@ -43,6 +43,7 @@ working Stop button, provider/model management, health and run statistics.
 | `security.test.ts` | 14 | encryption round-trip, IV uniqueness, tamper detection, redaction, error-surface leakage |
 | `performance.test.ts` | 19 | measured throughput overrides guessed speed, but only with enough evidence |
 | `routing-rules.test.ts` | 20 | rules steer routing, and can never beat privacy, budget or availability |
+| `web/markdown.test.ts` | 23 | the Markdown subset, dangerous-URL refusal, and every streaming prefix |
 | `export.test.ts` | 6 | markdown rendering and the versioned bundle shape |
 | `budget.test.ts` | 22 | spending limits: period caps, per-provider caps, and the cases where a budget must NOT fire |
 | `static.test.ts` | 21 | path traversal (encoded, NUL bytes, malformed encoding, prefix-sibling), cache headers, SPA fallback |

@@ -108,7 +108,8 @@ then `usage` and `done`.
 ## Tests
 
 ```bash
-pnpm test          # requires TEST_DATABASE_URL
+pnpm test          # API suite; requires TEST_DATABASE_URL
+pnpm --filter @nyro/web test   # web suite (markdown parser); no database needed
 pnpm typecheck
 pnpm build
 ```

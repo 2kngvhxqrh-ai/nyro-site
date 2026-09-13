@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamChat, type ApiError, type Conversation, type Decision, type Model } from "../api.ts";
 import { ConversationList } from "./ConversationList.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
 
 type Turn =
@@ -396,10 +397,10 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
             ) : null}
           </div>
         ) : (
-          <p className="stream-text text-sm text-ink">
-            {turn.text}
+          <div className="stream-body">
+            <Markdown source={turn.text} />
             {turn.streaming ? <span className="ml-0.5 animate-pulse text-accent">▍</span> : null}
-          </p>
+          </div>
         )}
       </div>
     </div>

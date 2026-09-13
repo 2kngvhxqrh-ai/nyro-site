@@ -78,8 +78,14 @@ jobs:
       - name: Build browser demo
         run: pnpm --filter @nyro/web build:demo
 
-      - name: Test
+      - name: Test (api)
         run: pnpm test
+
+      - name: Test (web)
+        # The markdown parser is the web package's own logic and carries the
+        # safety properties for rendering model output, so it is tested here
+        # rather than trusted.
+        run: pnpm --filter @nyro/web test
 
       - name: Verify the demo bundles the real router, not a copy
         # The demo's value rests entirely on it running the same code as the

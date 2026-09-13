@@ -28,6 +28,11 @@ body {
 /* Streaming output should not reflow the page as tokens arrive. */
 .stream-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* Rendered model output. Long unbroken strings (a URL, a base64 blob) wrap
+   instead of widening the page; code blocks scroll inside their own container. */
+.stream-body { overflow-wrap: anywhere; }
+.stream-body pre { overflow-wrap: normal; }
+
 /* Explanatory prose reads faster in a proportional face; the instrument panel
    itself stays monospace, where column alignment carries meaning. */
 .prose-sans { font-family: var(--font-sans); }

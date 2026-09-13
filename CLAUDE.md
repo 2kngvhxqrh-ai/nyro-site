@@ -21,7 +21,8 @@ pnpm start        # builds the UI, migrates, serves everything on :8787
 pnpm dev          # Vite on :5173 with hot reload, API on :8787
 pnpm typecheck    # both packages
 pnpm build        # both packages
-pnpm test         # needs TEST_DATABASE_URL pointed at a THROWAWAY database
+pnpm test         # API suite; needs TEST_DATABASE_URL (a THROWAWAY database)
+pnpm --filter @nyro/web test   # web suite (markdown parser); no database
 ```
 
 Tests delete rows. Never point `TEST_DATABASE_URL` at a real database.
@@ -111,7 +112,14 @@ or what NYRO measured. Tested.
 downgrading a user's override, and otherwise following the values — because a
 row that reports catalog numbers as a guess is lying about its own provenance.
 
-**15. A measured number must be distinguishable from a guessed one.**
+**15. Model output is never turned into HTML.**
+`markdown/parse.ts` emits a token tree; `Markdown.tsx` renders it as React
+elements. No HTML string, no `dangerouslySetInnerHTML`, anywhere in that path.
+Only `http:`, `https:` and `mailto:` become links. If you ever reach for a
+Markdown library here, you are trading a structural guarantee for trust in
+someone else's sanitiser.
+
+**16. A measured number must be distinguishable from a guessed one.**
 Speed is measured from real runs once a model has enough of them; reasoning and
 coding are still inferred from the model name. The Models table and the routing
 explanation both say which is which. Never present an estimate as an

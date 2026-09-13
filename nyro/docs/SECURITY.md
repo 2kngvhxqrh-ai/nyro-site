@@ -74,6 +74,23 @@ Stated plainly, because a security section that only lists wins is misleading.
 | **No sandboxing** | Nothing executes code yet | §40 |
 | **Key rotation is manual** | Changing `NYRO_SECRET_KEY` invalidates stored keys; they must be re-entered | — |
 
+### Rendering model output
+Chat renders Markdown, and every renderer's safety normally rests on its HTML
+sanitiser. NYRO has no sanitiser because it has no HTML: the parser
+(`apps/web/src/markdown/parse.ts`) emits a token tree and the renderer turns it
+into React elements. There is no HTML string in the pipeline and no
+`dangerouslySetInnerHTML`, so markup a model produced cannot become markup on
+the page. That is structural, not a filter.
+
+Links are the one element carrying a URL, so only `http:`, `https:` and
+`mailto:` become anchors; anything else (`javascript:`, `data:`, `vbscript:`,
+`file:`, protocol-relative) renders as literal text rather than being silently
+dropped. Anchors get `rel="noopener noreferrer"`.
+
+Verified in a browser with a model response containing a `<script>` tag, an
+`onerror` image and a `javascript:` link: no element created, no script run,
+all three shown as text.
+
 ### Search snippets
 `ts_headline` returns a string containing `<b>` tags. The UI splits on those
 exact tags and rebuilds them as React elements rather than using
