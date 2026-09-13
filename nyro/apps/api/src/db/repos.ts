@@ -671,6 +671,56 @@ export class ConversationRepo {
     }
   }
 
+  /**
+   * Removes the trailing assistant turn, for a regenerate.
+   *
+   * Only the trailing one, and only if it IS an assistant turn: a regenerate
+   * must replace the last answer, never reach back and rewrite earlier history.
+   * Returns the user message it now ends with, which becomes the prompt — so
+   * the caller never has to re-insert one and can never duplicate it.
+   */
+  async prepareRegenerate(conversationId: string): Promise<{ prompt: string } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query<{ id: string; role: Role; content: string }>(
+        `select id, role, content from messages
+          where conversation_id = $1
+          order by created_at desc, id desc
+          limit 2`,
+        [conversationId],
+      );
+
+      const last = rows[0];
+      if (!last) { await client.query("rollback"); return null; }
+
+      if (last.role === "assistant") {
+        await client.query("delete from messages where id = $1", [last.id]);
+        const prior = rows[1];
+        // An assistant turn with no user turn before it cannot be regenerated
+        // from anything, so leave the conversation as it was.
+        if (!prior || prior.role !== "user") { await client.query("rollback"); return null; }
+        await client.query("commit");
+        return { prompt: prior.content };
+      }
+
+      if (last.role === "user") {
+        // The previous attempt failed before an answer was stored; the prompt
+        // is already the last message and nothing needs deleting.
+        await client.query("commit");
+        return { prompt: last.content };
+      }
+
+      await client.query("rollback");
+      return null;
+    } catch (err) {
+      await client.query("rollback").catch(() => undefined);
+      throw dbError(err, "preparing regenerate");
+    } finally {
+      client.release();
+    }
+  }
+
   async setTitle(conversationId: string, title: string): Promise<void> {
     try {
       await this.pool.query("update conversations set title = $2 where id = $1", [conversationId, title]);

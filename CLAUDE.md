@@ -119,7 +119,14 @@ Only `http:`, `https:` and `mailto:` become links. If you ever reach for a
 Markdown library here, you are trading a structural guarantee for trust in
 someone else's sanitiser.
 
-**16. A measured number must be distinguishable from a guessed one.**
+**16. A regenerate takes its prompt from stored history, never from the request.**
+`send()` appends the user turn, so a naive retry would store the question twice
+and send it to the model twice. `prepareRegenerate` deletes only the trailing
+assistant message and returns the question already on record — which is also
+what stops a regenerate from silently changing what was asked. Tested both
+ways.
+
+**17. A measured number must be distinguishable from a guessed one.**
 Speed is measured from real runs once a model has enough of them; reasoning and
 coding are still inferred from the model name. The Models table and the routing
 explanation both say which is which. Never present an estimate as an

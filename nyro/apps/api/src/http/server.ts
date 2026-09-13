@@ -28,6 +28,7 @@ import { HttpRouter, readJsonBody, sendJson, type RequestContext } from "./route
 import { SseStream } from "./sse.ts";
 import { serveStatic } from "./static.ts";
 import {
+  chatRequestRefined,
   chatRequestSchema,
   createConversationSchema,
   updateModelSchema,
@@ -297,7 +298,7 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
 
   // ---- Chat ---------------------------------------------------------------
   r.post("/api/chat", async (ctx) => {
-    const body = parseOr400(chatRequestSchema, await readJsonBody(ctx.req));
+    const body = parseOr400(chatRequestRefined, await readJsonBody(ctx.req));
     const controller = new AbortController();
     ctx.req.on("aborted", () => controller.abort());
 
@@ -320,7 +321,7 @@ export function buildRouter(deps: ServerDeps): HttpRouter {
   });
 
   r.post("/api/chat/stream", async (ctx) => {
-    const body = parseOr400(chatRequestSchema, await readJsonBody(ctx.req));
+    const body = parseOr400(chatRequestRefined, await readJsonBody(ctx.req));
     const controller = new AbortController();
 
     // Closing the EventSource cancels the upstream provider call (spec §37, §83).
@@ -483,6 +484,7 @@ function toChatInput(body: z.infer<typeof chatRequestSchema>) {
   return {
     conversationId: body.conversationId,
     message: body.message,
+    regenerate: body.regenerate,
     mode: body.mode,
     privacy: body.privacy,
     modelId: body.modelId,

@@ -61,7 +61,7 @@ function inferPreferred(message: string): Capability[] {
 }
 
 interface ChatBody {
-  message: string; conversationId: string | null; mode: string; privacy: string;
+  message: string; regenerate?: boolean; conversationId: string | null; mode: string; privacy: string;
   modelId: string | null; providerId: string | null; systemPrompt: string | null;
   temperature: number | null; maxCostUsd: number | null; requiredCapabilities: Capability[];
 }
@@ -131,8 +131,24 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
   }
 
   const stored = conversations.get(conversationId)!;
-  const history: ChatMessage[] = stored.slice(-20).map((m) => ({ role: m.role as ChatMessage["role"], content: m.content }));
-  const { decision, estimatedInputTokens } = plan(body, history);
+
+  // Mirrors the real service: drop the trailing answer and reuse the stored
+  // question, so the demo cannot duplicate it either.
+  let effective = body;
+  if (body.regenerate) {
+    if (stored.at(-1)?.role === "assistant") stored.pop();
+    const lastUser = stored.at(-1);
+    if (!lastUser || lastUser.role !== "user") {
+      return jsonResponse(400, {
+        error: { code: "bad_request", message: "Nothing to regenerate in this conversation.", component: "browser-demo", retryable: false, timestamp: new Date().toISOString() },
+      });
+    }
+    effective = { ...body, message: lastUser.content };
+  }
+
+  const historySource = body.regenerate ? stored.slice(0, -1) : stored;
+  const history: ChatMessage[] = historySource.slice(-20).map((m) => ({ role: m.role as ChatMessage["role"], content: m.content }));
+  const { decision, estimatedInputTokens } = plan(effective, history);
 
   const encoder = new TextEncoder();
   const t0 = Date.now();
@@ -159,7 +175,9 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
         return;
       }
 
-      stored.push({ id: uuid(), role: "user", content: body.message, modelId: null, createdAt: new Date().toISOString() });
+      if (!body.regenerate) {
+        stored.push({ id: uuid(), role: "user", content: body.message, modelId: null, createdAt: new Date().toISOString() });
+      }
 
       // The same bounded fallback walk the real executor performs.
       const chain = decision.candidates.slice(0, 3);
@@ -177,7 +195,7 @@ function streamChat(body: ChatBody, signal: AbortSignal | null): Response {
           continue;
         }
 
-        const run = simulate(model, body.message, estimatedInputTokens);
+        const run = simulate(model, effective.message, estimatedInputTokens);
         let emitted = "";
         const words = run.text.split(/(\s+)/).filter((w) => w.length > 0);
 

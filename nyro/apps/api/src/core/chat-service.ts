@@ -45,6 +45,14 @@ import type {
 export interface ChatInput {
   conversationId: string | null;
   message: string;
+  /**
+   * Re-answer the last turn instead of adding a new one (spec §58, §103).
+   *
+   * The prompt comes from the stored conversation rather than from `message`,
+   * so a regenerate cannot silently change what was asked — and the user turn
+   * is never re-inserted, so it cannot be duplicated.
+   */
+  regenerate?: boolean;
   mode: RoutingMode;
   privacy: PrivacyClass;
   modelId: string | null;
@@ -225,12 +233,33 @@ export class ChatService {
 
     this.bus.emit({ type: "chat.started", conversationId });
 
+    // A regenerate rewinds first: the trailing answer is dropped and the
+    // existing user turn becomes the prompt.
+    let effectiveInput = input;
+    if (input.regenerate) {
+      if (!input.conversationId) {
+        throw new NyroError("bad_request", "Nothing to regenerate: this conversation has not started yet.", {
+          component: "chat-service",
+        });
+      }
+      const prepared = await this.conversations.prepareRegenerate(conversationId);
+      if (!prepared) {
+        throw new NyroError("bad_request", "Nothing to regenerate in this conversation.", {
+          component: "chat-service",
+        });
+      }
+      effectiveInput = { ...input, message: prepared.prompt };
+    }
+
     const stored = await this.conversations.messages(conversationId);
-    const history: ChatMessage[] = stored
+    // On a regenerate the prompt is already the last stored message, so it must
+    // not also be appended as history — that would send it twice.
+    const historySource = input.regenerate ? stored.slice(0, -1) : stored;
+    const history: ChatMessage[] = historySource
       .slice(-HISTORY_TURNS)
       .map((m) => ({ role: m.role, content: m.content }));
 
-    const { decision, messages, budget } = await this.plan(input, history);
+    const { decision, messages, budget } = await this.plan(effectiveInput, history);
 
     if (budget.action === "block") {
       throw new NyroError("cost_limit_exceeded", budget.message ?? "A spending limit has been reached.", {
@@ -249,8 +278,11 @@ export class ChatService {
     });
 
     // The user turn is saved before execution so a crash mid-answer does not
-    // lose what the user typed (spec §141, §142).
-    await this.conversations.addMessage(conversationId, "user", input.message, null);
+    // lose what the user typed (spec §141, §142). On a regenerate it is already
+    // there — re-adding it is the duplication bug this branch exists to avoid.
+    if (!input.regenerate) {
+      await this.conversations.addMessage(conversationId, "user", input.message, null);
+    }
 
     try {
       const outcome = await this.executor.execute({

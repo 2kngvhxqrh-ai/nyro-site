@@ -145,6 +145,18 @@ escalates.
 `requiredCapabilities` are hard requirements. NYRO's own inferred capabilities
 are preferences and never cause a refusal.
 
+### Regenerating (spec §58, §103)
+Send `"regenerate": true` with a `conversationId` to re-answer the last turn.
+
+The prompt is taken from the **stored conversation**, not from `message` — so a
+regenerate cannot duplicate the question or quietly change it, and `message`
+may be omitted. The trailing assistant message is deleted first; earlier turns
+are untouched. Combine with `modelId` to answer the same question on a
+different model.
+
+If the previous attempt failed before an answer was stored, the conversation
+already ends with the user turn and nothing is deleted.
+
 ### `POST /api/chat`
 Blocks until complete. Returns content, the model used, usage, cost, the
 routing decision and every attempt made.

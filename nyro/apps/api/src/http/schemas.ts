@@ -9,7 +9,11 @@ import { CAPABILITIES, PRIVACY_CLASSES, ROUTING_MODES } from "../core/types.ts";
 import { SUPPORTED_TRANSPORTS } from "../providers/index.ts";
 
 export const chatRequestSchema = z.object({
-  message: z.string().min(1, "message must not be empty").max(500_000),
+  // A regenerate takes its prompt from the stored conversation, so the caller
+  // has nothing meaningful to send here.
+  message: z.string().max(500_000).default(""),
+  /** Re-answer the last turn rather than adding a new one (spec §58, §103). */
+  regenerate: z.boolean().default(false),
   conversationId: z.string().uuid().nullable().default(null),
   mode: z.enum(ROUTING_MODES).default("auto"),
   privacy: z.enum(PRIVACY_CLASSES).default("normal"),
@@ -23,6 +27,12 @@ export const chatRequestSchema = z.object({
 });
 
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
+
+/** A normal turn still needs a message; only a regenerate may omit one. */
+export const chatRequestRefined = chatRequestSchema.refine(
+  (v) => v.regenerate || v.message.trim().length > 0,
+  { message: "message must not be empty", path: ["message"] },
+);
 
 /** Provider ids become part of model ids, so keep them URL- and id-safe. */
 const providerIdSchema = z

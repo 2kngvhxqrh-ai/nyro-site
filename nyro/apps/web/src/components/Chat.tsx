@@ -150,22 +150,59 @@ export function Chat({
     });
   }
 
+  function blankAssistantTurn(): Turn {
+    return {
+      kind: "assistant", text: "", decision: null, attempts: [], usage: null,
+      budget: null, latencyMs: null, error: null, streaming: true,
+    };
+  }
+
+  /**
+   * Re-answer the last turn (spec §58, §103).
+   *
+   * The prompt is NOT resent: the server takes it from the stored conversation,
+   * which is what stops a regenerate from duplicating the question or quietly
+   * changing it. `overrideModel` is how "use another model" works.
+   */
+  async function regenerate(overrideModel?: string): Promise<void> {
+    if (busy || !conversationId) return;
+
+    setBusy(true);
+    // Drop the answer being replaced; the question above it stays.
+    setTurns((prev) => {
+      const next = [...prev];
+      if (next.at(-1)?.kind === "assistant") next.pop();
+      return [...next, blankAssistantTurn()];
+    });
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    await runStream(
+      {
+        message: "",
+        regenerate: true,
+        conversationId,
+        mode,
+        privacy,
+        modelId: overrideModel ?? (pinnedModel === "" ? null : pinnedModel),
+      },
+      ac,
+    );
+  }
+
   async function send(): Promise<void> {
     const message = input.trim();
     if (message.length === 0 || busy) return;
 
     setInput("");
     setBusy(true);
-    setTurns((prev) => [
-      ...prev,
-      { kind: "user", text: message },
-      { kind: "assistant", text: "", decision: null, attempts: [], usage: null, budget: null, latencyMs: null, error: null, streaming: true },
-    ]);
+    setTurns((prev) => [...prev, { kind: "user", text: message }, blankAssistantTurn()]);
 
     const ac = new AbortController();
     abortRef.current = ac;
 
-    await streamChat(
+    await runStream(
       {
         message,
         conversationId,
@@ -173,6 +210,13 @@ export function Chat({
         privacy,
         modelId: pinnedModel === "" ? null : pinnedModel,
       },
+      ac,
+    );
+  }
+
+  async function runStream(body: Record<string, unknown>, ac: AbortController): Promise<void> {
+    await streamChat(
+      body,
       {
         onBudget: (b) => patchLast((t) => { t.budget = b; }),
         onRouting: (d) => patchLast((t) => { t.decision = d; }),
@@ -257,7 +301,18 @@ export function Chat({
               {turn.text}
             </div>
           ) : (
-            <AssistantTurn key={i} turn={turn} />
+            <AssistantTurn
+              key={i}
+              turn={turn}
+              // Only the last answer can be regenerated: replacing an earlier
+              // one would orphan every turn that followed it.
+              onRetry={
+                showHistory && conversationId && i === turns.length - 1 && !busy && !turn.streaming
+                  ? (modelId) => void regenerate(modelId)
+                  : undefined
+              }
+              models={enabledModels}
+            />
           ),
         )}
         <div ref={bottomRef} />
@@ -317,7 +372,16 @@ export function Chat({
   );
 }
 
-function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> }) {
+function AssistantTurn({
+  turn,
+  onRetry,
+  models = [],
+}: {
+  turn: Extract<Turn, { kind: "assistant" }>;
+  /** Absent when this turn cannot be regenerated. */
+  onRetry?: (modelId?: string) => void;
+  models?: Model[];
+}) {
   const chosen = turn.decision?.chosen;
   const usedFallback = turn.attempts.some((a) => a.isFallback);
   const actualModelId = turn.attempts.at(-1)?.modelId ?? chosen?.modelId ?? null;
@@ -403,6 +467,62 @@ function AssistantTurn({ turn }: { turn: Extract<Turn, { kind: "assistant" }> })
           </div>
         )}
       </div>
+
+      {onRetry ? <RetryBar onRetry={onRetry} models={models} failed={turn.error !== null} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Retry controls (spec §58, §103).
+ *
+ * Two separate actions, because they answer different questions: "that went
+ * wrong, try again" and "try again somewhere else". Collapsing them into one
+ * would make the second require fiddling with the request panel first.
+ */
+function RetryBar({
+  onRetry,
+  models,
+  failed,
+}: {
+  onRetry: (modelId?: string) => void;
+  models: Model[];
+  failed: boolean;
+}) {
+  const [picking, setPicking] = useState(false);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2">
+      <Button variant={failed ? "primary" : "default"} onClick={() => onRetry()}>
+        {failed ? "Try again" : "Regenerate"}
+      </Button>
+
+      {picking ? (
+        <select
+          autoFocus
+          className={`${inputClass} w-auto`}
+          defaultValue=""
+          onChange={(e) => {
+            const id = e.target.value;
+            setPicking(false);
+            if (id !== "") onRetry(id);
+          }}
+          onBlur={() => setPicking(false)}
+        >
+          <option value="">choose a model…</option>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>{m.displayName}{m.local ? " (local)" : ""}</option>
+          ))}
+        </select>
+      ) : (
+        <Button onClick={() => setPicking(true)} disabled={models.length === 0}>
+          Use another model
+        </Button>
+      )}
+
+      <span className="prose-sans text-[11px] text-dim">
+        Re-answers this turn. Your question is not resent or changed.
+      </span>
     </div>
   );
 }

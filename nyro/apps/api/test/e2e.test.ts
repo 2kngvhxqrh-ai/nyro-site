@@ -517,6 +517,126 @@ describe("failure handling and fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("regenerate (spec §58, §103)", () => {
+  async function messages(id: string): Promise<Array<{ role: string; content: string; modelId: string | null }>> {
+    return (await json<{ messages: Array<{ role: string; content: string; modelId: string | null }> }>(
+      `/api/conversations/${id}/messages`,
+    )).messages;
+  }
+
+  test("re-answers the last turn WITHOUT duplicating the user message", async () => {
+    // The bug this exists to prevent: send() appends the user turn, so a naive
+    // retry would store the question twice and feed it to the model twice.
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "regenerate me", mode: "local_only" }),
+    });
+    const before = await messages(c.conversationId);
+    assert.equal(before.length, 2);
+
+    const again = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, regenerate: true, mode: "local_only" }),
+    });
+    assert.equal(again.conversationId, c.conversationId);
+
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 2, `expected 2 messages, got ${after.map((m) => m.role).join(",")}`);
+    assert.equal(after.filter((m) => m.role === "user").length, 1, "the user message was duplicated");
+    assert.equal(after[0]!.content, "regenerate me", "the prompt changed");
+  });
+
+  test("the prompt comes from history, so a regenerate cannot change the question", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "the original question", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: c.conversationId,
+        regenerate: true,
+        mode: "local_only",
+        message: "a DIFFERENT question smuggled in",
+      }),
+    });
+    const after = await messages(c.conversationId);
+    assert.equal(after[0]!.content, "the original question", "regenerate rewrote the user's question");
+    assert.ok(!after.some((m) => m.content.includes("smuggled")));
+  });
+
+  test("it can be answered by a different model (spec §103)", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "answer this", mode: "local_only" }),
+    });
+    const first = (await messages(c.conversationId))[1]!.modelId;
+    assert.ok(first?.startsWith("ollama:"));
+
+    const r = await json<{ model: { id: string } }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, regenerate: true, modelId: "openai:gpt-4o-mini" }),
+    });
+    assert.equal(r.model.id, "openai:gpt-4o-mini");
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 2);
+    assert.equal(after[1]!.modelId, "openai:gpt-4o-mini", "the stored answer kept the old model");
+  });
+
+  test("earlier turns are untouched", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "turn one", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, message: "turn two", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, regenerate: true, mode: "local_only" }),
+    });
+    const after = await messages(c.conversationId);
+    assert.equal(after.length, 4, "a regenerate reached back into earlier history");
+    assert.equal(after[0]!.content, "turn one");
+    assert.equal(after[2]!.content, "turn two");
+  });
+
+  test("the history sent to the model does not repeat the prompt", async () => {
+    const c = await json<{ conversationId: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "unique-prompt-marker", mode: "local_only" }),
+    });
+    await json("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: c.conversationId, regenerate: true, mode: "local_only" }),
+    });
+    const sent = ollamaUp.received.at(-1)!.body as { messages: Array<{ content: string }> };
+    const occurrences = sent.messages.filter((m) => m.content === "unique-prompt-marker").length;
+    assert.equal(occurrences, 1, `the prompt was sent ${occurrences} times`);
+  });
+
+  test("regenerating a conversation that does not exist is rejected", async () => {
+    const res = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: "00000000-0000-4000-8000-000000000000", regenerate: true }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test("regenerating with no conversation at all is rejected", async () => {
+    const res = await api("/api/chat", { method: "POST", body: JSON.stringify({ regenerate: true }) });
+    assert.equal(res.status, 400);
+    assert.match(((await res.json()) as { error: { message: string } }).error.message, /regenerat/i);
+  });
+
+  test("a normal turn still requires a message", async () => {
+    const res = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: "" }) });
+    assert.equal(res.status, 400);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("correcting a model's traits (spec §8)", () => {
   const MODEL = "openai:gpt-4o-mini";
 
