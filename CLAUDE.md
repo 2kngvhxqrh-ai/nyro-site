@@ -180,7 +180,7 @@ A grid item defaults to `min-width: auto`, and `truncate` means
 `white-space: nowrap` — so at phone width the longest conversation title set
 the width of the entire app, which rendered 544px wide inside 390px and was
 clipped on both edges. `document.scrollWidth` equalled the viewport throughout,
-so nothing reported an overflow. `apps/web/test/layout.test.ts` loads the real
+so nothing reported an overflow. `apps/web/test/ui.browser.ts` loads the real
 build with a stubbed API and measures actual boxes at four widths, and renders states a populated database never shows — a fresh install with no working provider among them. Its fixtures
 exist to reproduce the bugs — a very long conversation title, a long provider
 health detail — so shrinking them defeats the test. It distinguishes CLIPPED

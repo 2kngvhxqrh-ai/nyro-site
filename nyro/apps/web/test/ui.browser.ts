@@ -556,3 +556,47 @@ describe("search that matched more than it shows", () => {
     }
   });
 });
+
+describe("adding a provider that already exists", () => {
+  test("says it will replace rather than add", async () => {
+    // Picking a preset prefills the id with the preset's own name, so the
+    // most likely path through this form already holds an id that exists —
+    // and the endpoint behind it is an upsert. A button labelled "add" that
+    // silently rewrites a configured provider, key included, is the kind of
+    // thing you only find out about afterwards.
+    const page = await open(1440);
+    try {
+      await page.getByRole("button", { name: "Models", exact: true }).click();
+      await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /Add provider/ }).click();
+      await page.waitForTimeout(400);
+
+      // "ollama" is in the fixture provider list.
+      await page.getByPlaceholder("my-provider").fill("ollama");
+      await page.waitForTimeout(300);
+      const text = await page.locator("main").innerText();
+      assert.match(text, /already exists/);
+      assert.match(text, /Saving replaces its settings/);
+      assert.equal(await page.getByRole("button", { name: "Replace ollama" }).count(), 1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and goes back to adding when the id is free", async () => {
+    const page = await open(1440);
+    try {
+      await page.getByRole("button", { name: "Models", exact: true }).click();
+      await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /Add provider/ }).click();
+      await page.waitForTimeout(400);
+      await page.getByPlaceholder("my-provider").fill("a-new-one");
+      await page.waitForTimeout(300);
+      const text = await page.locator("main").innerText();
+      assert.doesNotMatch(text, /already exists/);
+      assert.equal(await page.getByRole("button", { name: "Save and discover" }).count(), 1);
+    } finally {
+      await page.close();
+    }
+  });
+});

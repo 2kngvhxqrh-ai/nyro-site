@@ -72,6 +72,7 @@ export function Models({
         {adding ? (
           <AddProviderForm
             presets={presets}
+            existing={providers}
             onDone={async (msg) => { setAdding(false); setNotice({ tone: "ok", text: msg }); await refresh(); }}
             onError={(msg) => setNotice({ tone: "err", text: msg })}
           />
@@ -348,15 +349,20 @@ function ModelEditor({
 }
 
 function AddProviderForm({
-  presets, onDone, onError,
+  presets, existing, onDone, onError,
 }: {
-  presets: Preset[]; onDone: (msg: string) => Promise<void>; onError: (msg: string) => void;
+  presets: Preset[];
+  /** Used only to notice that this "add" is really a replace. */
+  existing: Provider[];
+  onDone: (msg: string) => Promise<void>;
+  onError: (msg: string) => void;
 }) {
   const [presetKey, setPresetKey] = useState("ollama");
   const [id, setId] = useState("ollama");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const clash = existing.find((p) => p.id === id.trim()) ?? null;
 
   const preset = presets.find((p) => p.key === presetKey);
 
@@ -420,8 +426,21 @@ function AddProviderForm({
           Get a key: <a className="text-accent underline" href={preset.apiKeyUrl} target="_blank" rel="noreferrer">{preset.apiKeyUrl}</a>
         </p>
       ) : null}
+      {/* Choosing a preset prefills the id with the preset's own name, so the
+          most likely way to reach this form is already holding an id that
+          exists — and PUT /api/providers/:id is an upsert. A button labelled
+          "add" that silently rewrites a provider you already configured, key
+          and all, is the kind of thing you only discover afterwards. */}
+      {clash ? (
+        <p className="prose-sans text-[11.5px] leading-relaxed text-wait">
+          A provider called <span className="text-ink">{clash.id}</span> already exists ({clash.baseUrl || "no base URL"}).
+          Saving replaces its settings{clash.hasApiKey ? ", and its stored API key unless you enter a new one" : ""}. Give
+          this one a different id to add it alongside.
+        </p>
+      ) : null}
+
       <Button variant="primary" onClick={() => void save()} disabled={saving || id.trim() === ""}>
-        {saving ? "Saving…" : "Save and discover"}
+        {saving ? "Saving…" : clash ? `Replace ${clash.id}` : "Save and discover"}
       </Button>
     </div>
   );
