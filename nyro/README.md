@@ -15,7 +15,7 @@ None of them is the architecture.
 ## What actually works today
 
 Every row names the suite that covers it, so the claim is checkable rather
-than asserted — 314 tests (277 API, 37 web) plus 26 browser checks, run against
+than asserted — 314 tests (277 API, 37 web) plus 27 browser checks, run against
 a real Postgres and a real Chromium. The column used to read "working" or
 "working, tested", which distinguished nothing: every row was tested, so the
 weaker label was misinformation in the cautious direction.
@@ -32,7 +32,7 @@ weaker label was misinformation in the cautious direction.
 | Stop that cancels the upstream call, keeping what was written, marked | providers, e2e |
 | Conversation persistence: browse, resume, rename, delete | e2e |
 | Your place, your draft and the panel you closed survive a tab switch | ui.browser |
-| Copy a whole answer, not only the code blocks inside it | ui.browser |
+| Copy a whole answer, not only the code blocks inside it — over plain HTTP too | ui.browser |
 | One view that throws shows a message instead of blanking the app | ui.browser |
 | Export everything you own, and it really is everything | export, e2e |
 | Full-text search with snippets, saying when it capped | e2e, ui.browser |

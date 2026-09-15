@@ -172,8 +172,14 @@ after(async () => {
   await new Promise<void>((r) => server?.close(() => r()));
 });
 
-async function open(width: number, overrides: Record<string, unknown> = {}): Promise<Page> {
+async function open(
+  width: number,
+  overrides: Record<string, unknown> = {},
+  /** Runs before any app code — used to remove an API the browser would have. */
+  beforeLoad?: () => void,
+): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 844 } });
+  if (beforeLoad) await page.addInitScript(beforeLoad);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const body = path in overrides ? overrides[path] : (FIXTURES[path] ?? {});
@@ -681,6 +687,31 @@ describe("the chat holds its place", () => {
       await copy.first().click();
       await page.waitForTimeout(300);
       assert.equal(await page.getByRole("button", { name: "Copied" }).count(), 1, "the button gave no feedback");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and still copies where navigator.clipboard does not exist", async () => {
+    // Not hypothetical, and not only CI: `navigator.clipboard` is a
+    // secure-context API, and NYRO serves plain HTTP. Open the same server
+    // from another machine on the LAN and the object is simply gone, so every
+    // copy button in the app did nothing, silently, while looking like it had
+    // worked. CI found it first because its Chromium refuses the write too.
+    const page = await open(1440, TRANSCRIPT, () => {
+      Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    });
+    try {
+      await openTranscript(page);
+      assert.equal(
+        await page.evaluate(() => navigator.clipboard === undefined),
+        true,
+        "the probe did not actually remove the API it is testing the absence of",
+      );
+
+      await page.getByRole("button", { name: "Copy answer" }).first().click();
+      await page.waitForTimeout(300);
+      assert.equal(await page.getByRole("button", { name: "Copied" }).count(), 1, "the fallback did not copy");
     } finally {
       await page.close();
     }

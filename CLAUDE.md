@@ -209,6 +209,16 @@ the starting value, so restore-in-an-effect races it and silently wipes exactly
 what it was meant to save. That is how it failed the first time. "+ New" must
 still clear them — resuming is holding your place, not refusing to let go.
 
+**23. A secure-context API is not available where NYRO runs.**
+NYRO serves plain HTTP on :8787, so `navigator.clipboard` is there at
+`localhost` and UNDEFINED the moment the same server is opened from another
+machine — and `writeText` also rejects when the document is not focused. Both
+were caught and ignored, so every copy button did nothing, silently, and looked
+exactly like one that had worked. `clipboard.ts` falls back to a real selection
+and RETURNS whether it copied, so the button can say "Select and copy" instead
+of claiming a success it did not have. Before reaching for any other
+`navigator` API, check what it does on a LAN address.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

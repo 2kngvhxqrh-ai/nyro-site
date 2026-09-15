@@ -6,6 +6,7 @@
  * cannot become markup on the page — a structural property, not a filter.
  */
 import { useState } from "react";
+import { copyText } from "../clipboard.ts";
 import type { Block, Inline } from "../markdown/parse.ts";
 import { parseMarkdown } from "../markdown/parse.ts";
 
@@ -47,17 +48,13 @@ function InlineNodes({ nodes }: { nodes: Inline[] }) {
 }
 
 function CodeBlock({ language, value, complete }: { language: string | null; value: string; complete: boolean }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    } catch {
-      // Clipboard access can be denied; the code is still selectable by hand,
-      // so this is not worth an error message.
-    }
+    // Says which of the two happened. Reporting nothing on failure is what
+    // made this button look like it worked everywhere; see `copyText`.
+    setState((await copyText(value)) ? "copied" : "failed");
+    setTimeout(() => setState("idle"), 1400);
   }
 
   return (
@@ -73,7 +70,7 @@ function CodeBlock({ language, value, complete }: { language: string | null; val
           onClick={() => void copy()}
           className="rounded border border-line px-1.5 py-0.5 text-[10px] text-dim transition hover:text-ink"
         >
-          {copied ? "Copied" : "Copy"}
+          {state === "copied" ? "Copied" : state === "failed" ? "Select and copy" : "Copy"}
         </button>
       </div>
       {/* Long lines scroll inside the block instead of widening the page. */}

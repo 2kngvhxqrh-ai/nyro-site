@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamChat, type ApiError, type Conversation, type Decision, type Instructions, type Model, type RoutePreview } from "../api.ts";
+import { copyText } from "../clipboard.ts";
 import { ConversationList } from "./ConversationList.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
@@ -857,17 +858,11 @@ function UserTurn({ text, onEdit }: { text: string; onEdit?: (text: string) => v
 
 /** Copies a whole answer. Same behaviour as the code-block button. */
 function CopyAnswer({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    } catch {
-      // Clipboard access can be denied; the text is still selectable by hand,
-      // so this is not worth an error message.
-    }
+    setState((await copyText(text)) ? "copied" : "failed");
+    setTimeout(() => setState("idle"), 1400);
   }
 
   return (
@@ -876,7 +871,7 @@ function CopyAnswer({ text }: { text: string }) {
       onClick={() => void copy()}
       className="rounded border border-line px-2 py-0.5 text-[10px] uppercase tracking-wider text-dim transition hover:border-accent/40 hover:text-accent"
     >
-      {copied ? "Copied" : "Copy answer"}
+      {state === "copied" ? "Copied" : state === "failed" ? "Select and copy" : "Copy answer"}
     </button>
   );
 }
