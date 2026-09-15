@@ -1,0 +1,47 @@
+@import "tailwindcss";
+/* Self-hosted IBM Plex. See src/fonts/plex.css for why it is not a CDN. */
+@import "./fonts/plex.css";
+
+@theme {
+  --color-ground: #0a0c0b;
+  --color-panel: #111614;
+  --color-sunk: #0d1211;
+  --color-line: #212a27;
+  --color-ink: #dde4e0;
+  --color-body: #afb9b4;
+  --color-dim: #78847f;
+  --color-accent: #d8a94a;
+  --color-live: #72b183;
+  --color-wait: #d3a44c;
+  --color-stop: #c87f73;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--color-ground);
+  color: var(--color-body);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Streaming output should not reflow the page as tokens arrive. */
+.stream-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Rendered model output. Long unbroken strings (a URL, a base64 blob) wrap
+   instead of widening the page; code blocks scroll inside their own container. */
+.stream-body { overflow-wrap: anywhere; }
+.stream-body pre { overflow-wrap: normal; }
+
+/* Explanatory prose reads faster in a proportional face; the instrument panel
+   itself stays monospace, where column alignment carries meaning. */
+.prose-sans { font-family: var(--font-sans); }
+
+/* Numbers that sit in columns should line up. */
+table, .tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

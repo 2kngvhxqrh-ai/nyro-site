@@ -1,0 +1,25 @@
+{
+  "name": "@nyro/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --watch --experimental-strip-types src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "node --env-file-if-exists=../../.env --experimental-strip-types src/db/migrate-cli.ts",
+    "test": "node --experimental-strip-types --test --test-concurrency=1 test/*.test.ts",
+    "smoke": "node --env-file-if-exists=../../.env --experimental-strip-types src/smoke.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,136 @@
+# CI for the NYRO system under nyro/.
+#
+# Exists so the test claims in the README and PR descriptions are verifiable by
+# someone other than the person who wrote them. It runs the same commands a
+# contributor runs locally — no CI-only shortcuts, no skipped suites — against
+# a real Postgres, because the e2e and static suites are only meaningful
+# against a real database and a real socket.
+name: NYRO CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["nyro/**", ".github/workflows/nyro-ci.yml"]
+  pull_request:
+    paths: ["nyro/**", ".github/workflows/nyro-ci.yml"]
+  # Lets a failure be re-run without an empty commit.
+  workflow_dispatch:
+
+concurrency:
+  group: nyro-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: nyro
+
+jobs:
+  verify:
+    name: typecheck · build · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nyro
+          POSTGRES_PASSWORD: nyro
+          POSTGRES_DB: nyro_test
+        ports: ["5432:5432"]
+        # Without this the test step can start before Postgres accepts
+        # connections, which looks like a flaky test and is not one.
+        options: >-
+          --health-cmd "pg_isready -U nyro -d nyro_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://nyro:nyro@localhost:5432/nyro_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # Must stay >=22: the API uses node:test and native TS type stripping.
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: nyro/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Build browser demo
+        run: pnpm --filter @nyro/web build:demo
+
+      - name: Test
+        # Both packages. The web suite carries the markdown parser's safety
+        # properties for rendering model output and the demo core's behaviour,
+        # so it is tested here rather than trusted. The browser layout suite is
+        # deliberately NOT in this glob — it is the next step.
+        run: pnpm test
+
+      - name: Install Chromium for the browser tests
+        run: pnpm --filter @nyro/web exec playwright install --with-deps chromium
+
+      - name: Test (UI, in a real browser)
+        # A whole class of user-visible bug had no coverage and shipped: at
+        # phone width the app rendered 544px wide inside a 390px viewport and
+        # was clipped on both edges, while document.scrollWidth still equalled
+        # the viewport so nothing reported an overflow. No unit test can see
+        # that; a browser measuring real boxes can.
+        run: pnpm --filter @nyro/web test:ui
+
+      - name: No script name is silently shadowed by a pnpm builtin
+        # `pnpm setup` runs PNPM's OWN setup — it configures pnpm's home
+        # directory and edits your shell rc — and never runs the package
+        # script of that name. The README told new users to run it as step
+        # one, so they got no .env, then `pnpm start` told them to run it
+        # again. A documented first command that silently does something else
+        # is worse than a missing one.
+        #
+        # `start` and `test` are deliberately absent from this list: pnpm
+        # treats those as npm lifecycle names and DOES run the script.
+        run: |
+          set -e
+          shadowed="setup init env exec add remove install link unlink store server dlx create publish pack patch import rebuild prune why licenses deploy fetch dedupe patch-commit"
+          fail=0
+          for f in package.json apps/api/package.json apps/web/package.json; do
+            for name in $shadowed; do
+              if node -e "const s=require('./$f').scripts||{};process.exit(s['$name']?0:1)"; then
+                echo "::error file=$f::script \"$name\" is a pnpm builtin; \`pnpm $name\` would not run it."
+                fail=1
+              fi
+            done
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "No script name collides with a pnpm builtin."
+
+      - name: Verify the demo bundles the real router, not a copy
+        # The demo's value rests entirely on it running the same code as the
+        # server. If someone replaces the bundled import with a local
+        # reimplementation, the demo silently starts lying and this catches it.
+        run: |
+          set -e
+          needle='request is local-only and this model is not local'
+          if ! grep -rqF "$needle" apps/web/dist-demo/; then
+            echo "::error::The demo bundle no longer contains the real router's privacy rule."
+            echo "The demo must import core/router.ts, not reimplement it."
+            exit 1
+          fi
+          echo "Demo bundle contains the real router."
