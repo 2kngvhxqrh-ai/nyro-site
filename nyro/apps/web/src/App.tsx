@@ -12,6 +12,7 @@ import { Chat } from "./components/Chat.tsx";
 import { Models } from "./components/Models.tsx";
 import { Health } from "./components/Health.tsx";
 import { Settings } from "./components/Settings.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { Dot } from "./components/ui.tsx";
 import { DemoBanner } from "./components/DemoBanner.tsx";
 import type { Turn } from "./components/Chat.tsx";
@@ -132,6 +133,9 @@ export function App() {
           Health tables) carries its own horizontal scroller, so nothing here
           needs the page to scroll. */}
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {/* A render error used to unmount everything — no message, no nav,
+            just a blank page. It is now contained to the view that threw. */}
+        <ErrorBoundary resetKey={view}>
         {view === "chat" ? (
           <Chat
             models={models}
@@ -146,6 +150,7 @@ export function App() {
         ) : (
           <Health health={health} stats={stats} refresh={refreshHealth} />
         )}
+        </ErrorBoundary>
       </main>
     </div>
   );

@@ -14,6 +14,41 @@ import { ConversationList } from "./ConversationList.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
 
+/**
+ * Where the chat was when you last looked at it.
+ *
+ * Switching to Settings unmounts this component, so the transcript and any
+ * half-typed message were simply gone — you came back to an empty box and had
+ * to find the conversation in the sidebar again. The conversation itself is
+ * safe in Postgres; what was lost was your PLACE in it, and the draft, which
+ * lives nowhere else.
+ *
+ * sessionStorage, not localStorage: "where I was a minute ago" is true for this
+ * tab, and a draft resurfacing next week would be a surprise, not a kindness.
+ * Every access is guarded — storage throws in a private window, and losing a
+ * draft is much better than a chat that will not render.
+ */
+const RESUME_KEY = "nyro.chat.conversationId";
+const DRAFT_KEY = "nyro.chat.draft";
+const PANEL_KEY = "nyro.chat.requestPanel";
+
+function remember(key: string, value: string): void {
+  try {
+    if (value === "") sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch {
+    /* private window, or storage disabled: the feature is a convenience */
+  }
+}
+
+function recall(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 /** Enough of the instructions to recognise them, without reprinting an essay. */
 function firstLineOf(text: string): string {
   const flat = text.trim().replace(/\s+/g, " ");
@@ -71,7 +106,11 @@ export function Chat({
       setTurns((prev) => (prev.length === 0 ? initialTurns : prev));
     }
   }, [initialTurns]);
-  const [input, setInput] = useState("");
+  // Initialised FROM storage, not restored by an effect. An effect that saves
+  // on change fires once on mount with the starting value, so a restore that
+  // also lives in an effect races it — and loses: the empty initial draft was
+  // written over the saved one before anything could read it.
+  const [input, setInput] = useState(() => recall(DRAFT_KEY) ?? "");
   const [mode, setMode] = useState<string>("auto");
   const [pinnedModel, setPinnedModel] = useState<string>("");
   const [privacy, setPrivacy] = useState<string>("normal");
@@ -91,7 +130,11 @@ export function Chat({
    * watch the cloud models drop out" something you can see rather than read.
    */
   const [preview, setPreview] = useState<RoutePreview | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(() =>
+    // The demo keeps conversations in memory for the life of the page, so
+    // resuming an id there would promise a persistence it does not have.
+    showHistory ? recall(RESUME_KEY) : null,
+  );
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsTotal, setConversationsTotal] = useState(0);
@@ -99,6 +142,7 @@ export function Chat({
   // A transcript that simply starts mid-conversation is indistinguishable from
   // one that began there, so say how many turns are above the top.
   const [olderHidden, setOlderHidden] = useState(0);
+  const [requestOpen, setRequestOpen] = useState(() => recall(PANEL_KEY) !== "closed");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -106,9 +150,21 @@ export function Chat({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
+  useEffect(() => { remember(DRAFT_KEY, input); }, [input]);
+  useEffect(() => { remember(RESUME_KEY, conversationId ?? ""); }, [conversationId]);
+  useEffect(() => { remember(PANEL_KEY, requestOpen ? "open" : "closed"); }, [requestOpen]);
+
   useEffect(() => {
     void api.instructions().then(setInstructions).catch(() => setInstructions(null));
   }, []);
+
+  // The id came back from storage above; its messages still have to be read.
+  useEffect(() => {
+    const id = recall(RESUME_KEY);
+    if (showHistory && id) void openConversation(id);
+    // Mount only: this restores a position, it does not follow later changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHistory]);
 
   useEffect(() => {
     const draft = input.trim();
@@ -128,7 +184,16 @@ export function Chat({
           privacy,
           modelId: pinnedModel === "" ? null : pinnedModel,
         })
-        .then((p) => { if (!cancelled) setPreview(p); })
+        // Checked, not trusted. This is a convenience strip; a response that
+        // is not the shape we expect — a proxy error page, a version skew, a
+        // 200 carrying something else — must make it disappear, not take the
+        // whole app down with it. Reading `.decision.chosen` off an unexpected
+        // body threw during render, and a render that throws unmounts
+        // everything: the entire UI went blank.
+        .then((p) => {
+          if (cancelled) return;
+          setPreview(p && typeof p === "object" && p.decision && typeof p.decision === "object" ? p : null);
+        })
         .catch(() => { if (!cancelled) setPreview(null); });
     }, 400);
 
@@ -363,7 +428,26 @@ export function Chat({
 
   const chatColumn = (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4">
-      <Panel title="Request">
+      {/* Collapsible, and remembered. These three controls are set once and
+          then rarely touched, but they held the top of the screen forever: on
+          a 600px window with six turns the conversation itself was down to
+          165px. Collapsed, the summary still says what the settings are, so
+          nothing becomes invisible — only smaller. */}
+      <Panel
+        title="Request"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {!requestOpen ? (
+              <span className="text-[11px] text-dim">
+                {mode} · {privacy} · {pinnedModel === "" ? "NYRO chooses" : pinnedModel}
+              </span>
+            ) : null}
+            <Button onClick={() => setRequestOpen(!requestOpen)}>{requestOpen ? "Hide" : "Change"}</Button>
+          </div>
+        }
+      >
+        {!requestOpen ? null : (
+        <>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-[11px] uppercase tracking-wider text-dim">Routing mode</span>
@@ -396,6 +480,9 @@ export function Chat({
             If no local model is available the request fails rather than escalating.
           </p>
         ) : null}
+        </>
+        )}
+
         {instructions && instructions.enabled && instructions.text.trim().length > 0 ? (
           <p className="prose-sans mt-3 text-[11px] leading-relaxed text-dim">
             <span className="uppercase tracking-wider text-accent">Custom instructions</span>{" "}
@@ -619,6 +706,16 @@ function AssistantTurn({
         )}
       </div>
 
+      {/* Code blocks have had a copy button since markdown landed; the answer
+          around them had none, so taking a whole reply somewhere else meant
+          selecting it by hand across a scrolling box. Shown on every finished
+          answer, not just the last one. */}
+      {!turn.streaming && turn.error === null && turn.text.trim().length > 0 ? (
+        <div className="flex items-center gap-2 border-t border-line px-4 py-1.5">
+          <CopyAnswer text={turn.text} />
+        </div>
+      ) : null}
+
       {onRetry ? <RetryBar onRetry={onRetry} models={models} failed={turn.error !== null} /> : null}
     </div>
   );
@@ -755,6 +852,32 @@ function UserTurn({ text, onEdit }: { text: string; onEdit?: (text: string) => v
       ) : null}
       <div className="rounded border border-line bg-sunk px-4 py-2.5 text-sm text-ink">{text}</div>
     </div>
+  );
+}
+
+/** Copies a whole answer. Same behaviour as the code-block button. */
+function CopyAnswer({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // Clipboard access can be denied; the text is still selectable by hand,
+      // so this is not worth an error message.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      className="rounded border border-line px-2 py-0.5 text-[10px] uppercase tracking-wider text-dim transition hover:border-accent/40 hover:text-accent"
+    >
+      {copied ? "Copied" : "Copy answer"}
+    </button>
   );
 }
 

@@ -118,6 +118,19 @@ const FIXTURES: Record<string, unknown> = {
     ],
   },
   "/api/routing-rules": { rules: [] },
+  "/api/route/preview": {
+    estimatedInputTokens: 12,
+    decision: {
+      mode: "auto",
+      chosen: {
+        modelId: "ollama:qwen2.5-coder:7b", displayName: "qwen2.5-coder:7b", providerId: "ollama",
+        local: true, estimatedCostUsd: 0, reasons: ["runs locally, no data leaves this machine"],
+      },
+      fallbacks: [],
+      rejected: [],
+    },
+    budget: { action: "allow", message: null, breaches: [] },
+  },
 };
 
 let server: Server;
@@ -595,6 +608,151 @@ describe("adding a provider that already exists", () => {
       const text = await page.locator("main").innerText();
       assert.doesNotMatch(text, /already exists/);
       assert.equal(await page.getByRole("button", { name: "Save and discover" }).count(), 1);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("the chat holds its place", () => {
+  const TRANSCRIPT = {
+    "/api/conversations/00000000-1111-4111-8111-111111111111/messages": {
+      messages: [
+        { id: "m1", role: "user", content: "what is a router", modelId: null, finishReason: null },
+        { id: "m2", role: "assistant", content: "It picks which model answers.", modelId: "ollama:qwen2.5-coder:7b", finishReason: null },
+      ],
+      total: 2,
+    },
+  };
+
+  async function openTranscript(page: Page): Promise<void> {
+    await page.getByRole("button", { name: /How do I refactor/ }).first().click();
+    await page.waitForTimeout(700);
+  }
+
+  test("a visit to Settings no longer destroys the transcript and the draft", async () => {
+    // Switching tabs unmounts Chat, so both were simply gone: you came back to
+    // an empty box and had to find the conversation again. The conversation is
+    // safe in Postgres; what was lost was your PLACE in it, and the draft,
+    // which lives nowhere else.
+    const page = await open(1440, TRANSCRIPT);
+    try {
+      await openTranscript(page);
+      assert.match(await page.locator("main").innerText(), /It picks which model answers/);
+
+      await page.getByPlaceholder(/Message NYRO/).fill("half a thought");
+      await page.waitForTimeout(300);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(600);
+      await page.getByRole("button", { name: "Chat", exact: true }).click();
+      await page.waitForTimeout(900);
+
+      assert.match(await page.locator("main").innerText(), /It picks which model answers/, "the transcript was lost");
+      assert.equal(await page.getByPlaceholder(/Message NYRO/).inputValue(), "half a thought", "the draft was lost");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("but starting a new chat does not bring the old one back", async () => {
+    const page = await open(1440, TRANSCRIPT);
+    try {
+      await openTranscript(page);
+      await page.getByRole("button", { name: "+ New" }).click();
+      await page.waitForTimeout(400);
+      await page.getByRole("button", { name: "Health", exact: true }).click();
+      await page.waitForTimeout(500);
+      await page.getByRole("button", { name: "Chat", exact: true }).click();
+      await page.waitForTimeout(900);
+      assert.doesNotMatch(await page.locator("main").innerText(), /It picks which model answers/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a finished answer can be copied whole", async () => {
+    // Code blocks have had a copy button since markdown landed; the answer
+    // around them had none.
+    const page = await open(1440, TRANSCRIPT);
+    try {
+      await openTranscript(page);
+      const copy = page.getByRole("button", { name: "Copy answer" });
+      assert.equal(await copy.count(), 1, "no way to copy the answer");
+      await copy.first().click();
+      await page.waitForTimeout(300);
+      assert.equal(await page.getByRole("button", { name: "Copied" }).count(), 1, "the button gave no feedback");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("collapsing the request panel gives the conversation the room", async () => {
+    const page = await open(1280, TRANSCRIPT);
+    try {
+      await openTranscript(page);
+      const transcript = page.locator("div.flex-1.space-y-3.overflow-y-auto").first();
+      const before = await transcript.evaluate((el) => el.clientHeight);
+
+      await page.getByRole("button", { name: "Hide" }).click();
+      await page.waitForTimeout(400);
+      const after = await transcript.evaluate((el) => el.clientHeight);
+      assert.ok(after > before, `collapsing freed no room (${before} -> ${after})`);
+
+      // Collapsed is smaller, not invisible: the settings still read back.
+      assert.match(await page.locator("main").innerText(), /auto · normal · NYRO chooses/);
+
+      await page.getByRole("button", { name: "Health", exact: true }).click();
+      await page.waitForTimeout(500);
+      await page.getByRole("button", { name: "Chat", exact: true }).click();
+      await page.waitForTimeout(700);
+      assert.equal(await page.getByRole("button", { name: "Change" }).count(), 1, "the panel reopened itself");
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("a bad response does not blank the app", () => {
+  test("a routing preview of the wrong shape breaks nothing", async () => {
+    // This is how the crash was found: a restored draft fires a preview on
+    // mount, the strip read `.decision.chosen` off a body that had neither,
+    // and React unmounted the entire tree. Not a broken strip — an empty page,
+    // with no message and no navigation.
+    const page = await open(1440, { "/api/route/preview": { unexpected: true } });
+    const pageErrors: string[] = [];
+    page.on("pageerror", (e) => pageErrors.push(e.message));
+    try {
+      await page.getByPlaceholder(/Message NYRO/).fill("something to preview");
+      await page.waitForTimeout(1200);
+
+      assert.equal(await page.locator("main").count(), 1, "the app unmounted");
+      // A placeholder is not innerText, and headings are uppercased by CSS —
+      // so assert on the control itself rather than on painted words.
+      assert.equal(await page.getByPlaceholder(/Message NYRO/).count(), 1, "the composer is gone");
+      assert.doesNotMatch(await page.locator("main").innerText(), /would go to/, "it rendered a decision it did not receive");
+      assert.deepEqual(pageErrors, [], "the page threw");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and a view that really does throw shows a message, not a blank page", async () => {
+    // Health maps over `components`; handed something that is not an array it
+    // throws during render, which is a genuine crash rather than a simulated
+    // one. The boundary should contain it to that view.
+    const page = await open(1440, { "/api/health": { state: "healthy", checkedAt: "x", components: "not an array" } });
+    try {
+      await page.getByRole("button", { name: "Health", exact: true }).click();
+      await page.waitForTimeout(900);
+
+      const text = await page.locator("main").innerText();
+      assert.match(text, /This view stopped working/i, "the crash was not contained");
+      assert.match(text, /not affected/i, "it did not say the data is safe");
+
+      // And the rest of the app still works: switching view clears it.
+      await page.getByRole("button", { name: "Chat", exact: true }).click();
+      await page.waitForTimeout(700);
+      assert.equal(await page.getByPlaceholder(/Message NYRO/).count(), 1, "the app did not recover");
     } finally {
       await page.close();
     }

@@ -188,6 +188,27 @@ from merely off-screen: content inside `overflow-x: auto` is reachable by
 scrolling and is not a bug; the same content inside a box that cannot scroll is
 unreachable and is.
 
+**21. A render that throws must not unmount the app.**
+It did. `RoutePreviewStrip` read `.decision.chosen` off a preview body that had
+neither, and React tore down the whole tree: no message, no navigation, no way
+back but a reload the user has to think of themselves. Two things fix that, and
+both are load-bearing. Responses are shape-checked before they are trusted, so
+an unexpected body degrades to "no preview" instead of throwing. And
+`ErrorBoundary` wraps the view — a class component because React has no hook
+that catches a render error — so a crash that still gets through is contained
+to one tab and says the stored data is unaffected. Both are covered in
+`ui.browser.ts`, the second against a view made to throw for real rather than a
+simulated error.
+
+**22. What the user is holding is not the server's to lose.**
+A conversation lives in Postgres; the user's PLACE in it, the half-typed draft,
+and the panel they collapsed live nowhere else, and switching tabs unmounts
+`Chat`. They are kept in `sessionStorage` and read in the `useState`
+initialisers, NOT restored by an effect: a persist effect fires on mount with
+the starting value, so restore-in-an-effect races it and silently wipes exactly
+what it was meant to save. That is how it failed the first time. "+ New" must
+still clear them — resuming is holding your place, not refusing to let go.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:
