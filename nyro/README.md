@@ -14,34 +14,38 @@ None of them is the architecture.
 
 ## What actually works today
 
-Everything in this list is covered by the test suite (313 tests: 276 API, 37 web, plus 20 browser checks) and was
-verified running against a real Postgres and a real browser.
+Every row names the suite that covers it, so the claim is checkable rather
+than asserted — 314 tests (277 API, 37 web) plus 20 browser checks, run against
+a real Postgres and a real Chromium. The column used to read "working" or
+"working, tested", which distinguished nothing: every row was tested, so the
+weaker label was misinformation in the cautious direction.
 
-| Capability | State |
+| Capability | Covered by |
 |---|---|
-| Chat through the model router, streaming over SSE | working |
-| Three real wire protocols: Ollama NDJSON, OpenAI SSE, Anthropic typed SSE | working |
-| Add / remove / test providers; store API keys encrypted at rest | working |
-| Dynamic model discovery into a Postgres-backed registry | working |
-| Routing modes: auto, cheapest, fastest, best, local_only, cloud_only | working |
-| Privacy enforcement — a local-only request can never reach a cloud model | working, tested |
-| Automatic fallback to the next-ranked model when one fails | working, tested |
-| Stop button that genuinely cancels the upstream model call, keeping what was written | working, tested |
-| Conversation persistence, with history you can browse, resume, rename and delete | working, tested |
-| Export everything you own to JSON or readable Markdown, with no API keys — and it really is everything | working, tested |
-| Full-text search across every conversation, with highlighted snippets, saying when it capped | working, tested |
-| Correct a model's price or context window; discovery will not overwrite it | working, tested |
-| Markdown rendering with syntax-labelled, copyable code blocks | working, tested |
-| Regenerate an answer, or retry it on a different model | working, tested |
-| Edit the last question in place and re-answer it | working, tested |
-| See which model a message would go to, and why not the others, before sending | working, tested |
-| Custom instructions: a standing system prompt you can switch off without losing | working, tested |
-| Health checks per component; per-model run/latency/cost stats | working |
-| Spending limits: daily / weekly / monthly / per-request / per-provider | working, tested |
-| Task-specific routing rules ("coding goes to Claude") | working, tested |
-| Measured routing: speed learned from real runs, not guessed | working, tested |
-| Single-process mode: the API serves the built UI on one origin | working |
-| Static serving that refuses path traversal | working, tested |
+| Chat through the model router, streaming over SSE | e2e |
+| Three real wire protocols: Ollama NDJSON, OpenAI SSE, Anthropic typed SSE | providers, e2e |
+| Add / remove / test providers; store API keys encrypted at rest | e2e, security, ui.browser |
+| Dynamic model discovery into a Postgres-backed registry | e2e |
+| Routing modes: auto, cheapest, fastest, best, local_only, cloud_only | router, e2e |
+| Privacy enforcement — a local-only request can never reach a cloud model | router, e2e |
+| Automatic fallback to the next-ranked model when one fails | e2e |
+| Stop that cancels the upstream call, keeping what was written, marked | providers, e2e |
+| Conversation persistence: browse, resume, rename, delete | e2e |
+| Export everything you own, and it really is everything | export, e2e |
+| Full-text search with snippets, saying when it capped | e2e, ui.browser |
+| Correct a model's price or context window; discovery will not overwrite it | e2e |
+| Markdown rendering with syntax-labelled, copyable code blocks | markdown |
+| Regenerate an answer, or retry it on a different model | e2e |
+| Edit the last question in place and re-answer it | e2e |
+| See which model a message would go to, and why not the others | e2e, demo-core, ui.browser |
+| Custom instructions: a standing system prompt you can switch off without losing | instructions |
+| Health checks per component; per-model run/latency/cost stats | e2e |
+| Spending limits: daily / weekly / monthly / per-request / per-provider | budget, e2e |
+| Task-specific routing rules ("coding goes to Claude") | routing-rules, e2e |
+| Measured routing: speed learned from real runs, not guessed | performance, e2e |
+| Single-process mode: the API serves the built UI on one origin | static |
+| Static serving that refuses path traversal and symlink escapes | static |
+| No clipped content at 360–1440px; a fresh install; the API going away | ui.browser |
 
 ## What is deliberately NOT here
 
