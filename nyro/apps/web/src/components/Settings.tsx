@@ -419,6 +419,7 @@ function InstructionsPanel() {
 function MeasuredRoutingPanel() {
   const [state, setState] = useState<PerformanceState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   async function load(): Promise<void> {
     try { setState(await api.performance()); } catch { setState(null); }
@@ -427,7 +428,19 @@ function MeasuredRoutingPanel() {
 
   async function toggle(enabled: boolean): Promise<void> {
     setBusy(true);
-    try { await api.setMeasuredRouting(enabled); await load(); } finally { setBusy(false); }
+    setErr(null);
+    try {
+      await api.setMeasuredRouting(enabled);
+      await load();
+    } catch (e) {
+      // This was the only write in this file with no catch. The rejection
+      // escaped as an unhandled page error, the switch stayed where it was,
+      // and the user was told nothing at all -- pressing Turn off simply did
+      // nothing whenever the API could not take it.
+      setErr(e instanceof NyroApiError ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!state) return null;
@@ -443,6 +456,8 @@ function MeasuredRoutingPanel() {
         </Button>
       }
     >
+      {err ? <p className="mb-3 rounded border border-stop/40 px-3 py-2 text-xs text-stop">{err}</p> : null}
+
       <p className="prose-sans text-[11.5px] leading-relaxed text-dim">
         {state.enabled
           ? "NYRO is ranking models on speed it measured from your own runs, not on guesses from the model name."

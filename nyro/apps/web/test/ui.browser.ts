@@ -886,6 +886,46 @@ describe("a routing rule you have not saved", () => {
   });
 });
 
+describe("a switch that could not be flipped says so", () => {
+  test("measured routing reports a failed write instead of silently ignoring it", async () => {
+    // The only write in Settings with no catch. The rejection escaped as an
+    // unhandled page error, the switch stayed where it was, and nothing on
+    // screen changed — so with the API unable to take it, pressing Turn off
+    // simply did nothing, and looked like a switch that does not work.
+    const page = await open(1280);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (e) => pageErrors.push(e.message));
+    await page.route("**/api/performance", async (route) => {
+      if (route.request().method() === "PUT") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "db_error", message: "the database refused the write" } }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ enabled: true, minSamples: 5, models: [] }),
+      });
+    });
+    try {
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(800);
+
+      const panel = page.locator("section", { hasText: "Measured routing" }).last();
+      await panel.getByRole("button", { name: /Turn (on|off)/ }).click();
+      await page.waitForTimeout(700);
+
+      assert.match(await panel.innerText(), /database refused the write/i, "the failure was not shown");
+      assert.deepEqual(pageErrors, [], "the rejection escaped as a page error");
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe("the published demo offers nothing it cannot do", () => {
   test("no export link that would save the page as your backup", async () => {
     // The demo answers /api/export with an honest 409 and could never deliver

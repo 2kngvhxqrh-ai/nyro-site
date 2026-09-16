@@ -248,6 +248,13 @@ survives leaving the tab, because a half-filled rule lives nowhere else. It is
 NOT saved for the user: a rule NYRO has not been told to keep must not start
 steering routing.
 
+**27. A write the user asked for either happens or says why not.**
+The measured-routing switch was the one write in `Settings.tsx` with no catch.
+A rejected PUT escaped as an unhandled page error, the switch stayed where it
+was, and nothing on screen changed — indistinguishable from a switch that does
+not work. Every panel that writes now reports its failure in place. When adding
+one, copy a neighbour: `catch (e) { setErr(...) }`, not `void save()` and hope.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

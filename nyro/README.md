@@ -15,7 +15,7 @@ None of them is the architecture.
 ## What actually works today
 
 Every row names the suite that covers it, so the claim is checkable rather
-than asserted — 314 tests (277 API, 37 web) plus 32 browser checks, run against
+than asserted — 314 tests (277 API, 37 web) plus 33 browser checks, run against
 a real Postgres and a real Chromium. The column used to read "working" or
 "working, tested", which distinguished nothing: every row was tested, so the
 weaker label was misinformation in the cautious direction.
@@ -46,7 +46,7 @@ weaker label was misinformation in the cautious direction.
 | Health checks per component; per-model run/latency/cost stats | e2e |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | budget, e2e |
 | Task-specific routing rules ("coding goes to Claude"), draft kept until saved | routing-rules, e2e, ui.browser |
-| Measured routing: speed learned from real runs, not guessed | performance, e2e |
+| Measured routing: speed learned from real runs, not guessed | performance, e2e, ui.browser |
 | Single-process mode: the API serves the built UI on one origin | static |
 | Static serving that refuses path traversal and symlink escapes | static |
 | No clipped content at 360–1440px; a fresh install; the API going away | ui.browser |
