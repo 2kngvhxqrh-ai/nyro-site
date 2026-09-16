@@ -286,9 +286,31 @@ function ModelEditor({
   async function save(): Promise<void> {
     const patch: Record<string, unknown> = {};
     if (displayName.trim() && displayName !== model.displayName) patch["displayName"] = displayName.trim();
-    const ic = num(inputCost); if (ic !== null && ic !== model.inputCostPer1m) patch["inputCostPer1m"] = ic;
-    const oc = num(outputCost); if (oc !== null && oc !== model.outputCostPer1m) patch["outputCostPer1m"] = oc;
-    const cw = num(contextWindow); if (cw !== null && cw !== model.contextWindow) patch["contextWindow"] = Math.round(cw);
+
+    // A value NYRO cannot read is NOT the same as a field you did not touch.
+    // Both used to be skipped, so typing a price wrong — or clearing the box —
+    // closed the editor with nothing sent and nothing said, which looks exactly
+    // like a correction that was accepted. The table then still says `catalog`
+    // and the model keeps the price you thought you had just fixed.
+    const unreadable: string[] = [];
+    const parse = (raw: string, label: string): number | null => {
+      const n = num(raw);
+      if (n === null) unreadable.push(label);
+      return n;
+    };
+    const ic = parse(inputCost, "Input $ / 1M");
+    const oc = parse(outputCost, "Output $ / 1M");
+    const cw = parse(contextWindow, "Context window");
+    if (unreadable.length > 0) {
+      setErr(
+        `${unreadable.join(" and ")} ${unreadable.length > 1 ? "need" : "needs"} a number that is zero or more. ` +
+          "Nothing was saved.",
+      );
+      return;
+    }
+    if (ic !== null && ic !== model.inputCostPer1m) patch["inputCostPer1m"] = ic;
+    if (oc !== null && oc !== model.outputCostPer1m) patch["outputCostPer1m"] = oc;
+    if (cw !== null && cw !== model.contextWindow) patch["contextWindow"] = Math.round(cw);
 
     if (Object.keys(patch).length === 0) { onClose(); return; }
 

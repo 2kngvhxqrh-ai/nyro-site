@@ -886,6 +886,88 @@ describe("a routing rule you have not saved", () => {
   });
 });
 
+describe("correcting a model's price", () => {
+  const CATALOG_MODEL = {
+    models: [
+      {
+        id: "openai:gpt-4o", providerId: "openai", name: "gpt-4o", displayName: "GPT-4o", local: false, enabled: true,
+        contextWindow: 128000, inputCostPer1kUsd: 0.005, outputCostPer1kUsd: 0.015,
+        inputCostPer1m: 5, outputCostPer1m: 15, capabilities: ["chat", "reasoning", "coding"],
+        traits: { reasoning: 90, coding: 88, speed: 75 }, scores: { reasoning: 90, coding: 88, speed: 75 },
+        traitsSource: "catalog",
+      },
+    ],
+  };
+
+  async function openEditor(page: Page): Promise<string[]> {
+    const writes: string[] = [];
+    await page.route("**/api/models/**", async (route) => {
+      const req = route.request();
+      if (req.method() !== "GET") writes.push(`${req.method()} ${req.postData() ?? ""}`);
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.getByRole("button", { name: "Models", exact: true }).click();
+    await page.waitForTimeout(700);
+    await page.getByRole("button", { name: "catalog", exact: true }).first().click();
+    await page.waitForTimeout(400);
+    return writes;
+  }
+
+  test("a value NYRO cannot read is not silently dropped", async () => {
+    // Both a bad value and an untouched field produced no patch, so the editor
+    // closed having sent nothing and said nothing — indistinguishable from a
+    // correction that was accepted, while the table still says `catalog` and
+    // the model keeps the price you thought you had just fixed.
+    const page = await open(1440, { "/api/models": CATALOG_MODEL });
+    try {
+      const writes = await openEditor(page);
+      await page.locator('input[inputmode="decimal"]').first().fill("not a number");
+      await page.getByRole("button", { name: /Save correction/ }).click();
+      await page.waitForTimeout(600);
+
+      assert.ok(
+        (await page.locator('input[inputmode="decimal"]').count()) > 0,
+        "the editor closed as though the correction had been saved",
+      );
+      assert.match(await page.locator("main").innerText(), /needs a number/i, "nothing said the value was unreadable");
+      assert.deepEqual(writes, [], "it sent something anyway");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and an empty box counts as unreadable, not as 'leave it alone'", async () => {
+    const page = await open(1440, { "/api/models": CATALOG_MODEL });
+    try {
+      const writes = await openEditor(page);
+      await page.locator('input[inputmode="numeric"]').first().fill("");
+      await page.getByRole("button", { name: /Save correction/ }).click();
+      await page.waitForTimeout(600);
+
+      assert.match(await page.locator("main").innerText(), /context window needs a number/i);
+      assert.deepEqual(writes, [], "it sent something anyway");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("but a correction NYRO can read still goes through", async () => {
+    // The half that matters most: the guard must not have broken saving.
+    const page = await open(1440, { "/api/models": CATALOG_MODEL });
+    try {
+      const writes = await openEditor(page);
+      await page.locator('input[inputmode="decimal"]').first().fill("2.5");
+      await page.getByRole("button", { name: /Save correction/ }).click();
+      await page.waitForTimeout(600);
+
+      assert.equal(writes.length, 1, `expected one write, got ${JSON.stringify(writes)}`);
+      assert.match(writes[0] ?? "", /"inputCostPer1m":2\.5/, "the corrected price was not what was sent");
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe("a switch that could not be flipped says so", () => {
   test("measured routing reports a failed write instead of silently ignoring it", async () => {
     // The only write in Settings with no catch. The rejection escaped as an

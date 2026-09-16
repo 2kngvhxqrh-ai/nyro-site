@@ -15,7 +15,7 @@ None of them is the architecture.
 ## What actually works today
 
 Every row names the suite that covers it, so the claim is checkable rather
-than asserted — 314 tests (277 API, 37 web) plus 33 browser checks, run against
+than asserted — 314 tests (277 API, 37 web) plus 36 browser checks, run against
 a real Postgres and a real Chromium. The column used to read "working" or
 "working, tested", which distinguished nothing: every row was tested, so the
 weaker label was misinformation in the cautious direction.
@@ -37,7 +37,7 @@ weaker label was misinformation in the cautious direction.
 | Export everything you own, and it really is everything | export, e2e |
 | The demo offers nothing it cannot do — no export button without a database | ui.browser |
 | Full-text search with snippets, saying when it capped | e2e, ui.browser |
-| Correct a model's price or context window; discovery will not overwrite it | e2e |
+| Correct a model's price or context window; discovery will not overwrite it | e2e, ui.browser |
 | Markdown rendering with syntax-labelled, copyable code blocks | markdown |
 | Regenerate an answer, or retry it on a different model | e2e |
 | Edit the last question in place and re-answer it | e2e |

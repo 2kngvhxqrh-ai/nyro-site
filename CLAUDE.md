@@ -255,6 +255,16 @@ was, and nothing on screen changed — indistinguishable from a switch that does
 not work. Every panel that writes now reports its failure in place. When adding
 one, copy a neighbour: `catch (e) { setErr(...) }`, not `void save()` and hope.
 
+**28. A value the app cannot read is not a field the user left alone.**
+The model editor built its patch by skipping anything `num()` could not parse,
+which is also how it skipped untouched fields — so typing a price wrong, or
+clearing the box, closed the editor having sent nothing and said nothing. It
+looked exactly like an accepted correction, while the row still read `catalog`
+and the model kept the price the user thought they had just fixed. Unreadable
+input now names the field and saves nothing; only a genuine no-op closes
+quietly. Anywhere else that builds a patch by skipping falsy values, check
+which of the two it is doing.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:
