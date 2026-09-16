@@ -743,6 +743,66 @@ describe("the chat holds its place", () => {
   });
 });
 
+describe("instructions you just wrote are actually in effect", () => {
+  /** Stateful, because the bug is that a PUT stores something the GET returns. */
+  async function withInstructions(page: Page, start: { enabled: boolean; text: string }) {
+    let stored = start;
+    const puts: Array<{ enabled: boolean; text: string }> = [];
+    // Registered after open()'s catch-all, so this handler wins for this path.
+    await page.route("**/api/instructions", async (route) => {
+      if (route.request().method() === "PUT") {
+        stored = JSON.parse(route.request().postData() ?? "{}");
+        puts.push(stored);
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stored) });
+    });
+    return puts;
+  }
+
+  test("the first save switches them on rather than storing them inert", async () => {
+    // Saving used to store `enabled: false`, because that is what was already
+    // on record. The panel said so — "Saved, but switched off" — which is
+    // honest and still leaves you with a setting that changes nothing until
+    // you find a second button. Nobody writes instructions to keep them off.
+    const page = await open(1280, { "/api/instructions": { enabled: false, text: "" } });
+    try {
+      const puts = await withInstructions(page, { enabled: false, text: "" });
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(700);
+
+      await page.getByPlaceholder(/Answer in British English/).fill("Always answer in Spanish.");
+      await page.getByRole("button", { name: "Save", exact: true }).last().click();
+      await page.waitForTimeout(600);
+
+      assert.deepEqual(puts, [{ enabled: true, text: "Always answer in Spanish." }], "saved them switched off");
+      assert.match(await page.locator("main").innerText(), /in effect/i);
+      assert.doesNotMatch(await page.locator("main").innerText(), /switched off/i);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("but editing instructions you switched off leaves them off", async () => {
+    // Off is for parking instructions you already have. A later edit must not
+    // quietly turn them back on, or the switch means nothing.
+    const page = await open(1280, { "/api/instructions": { enabled: false, text: "Always answer in Spanish." } });
+    try {
+      const puts = await withInstructions(page, { enabled: false, text: "Always answer in Spanish." });
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(700);
+
+      await page.getByPlaceholder(/Answer in British English/).fill("Always answer in Portuguese.");
+      await page.getByRole("button", { name: "Save", exact: true }).last().click();
+      await page.waitForTimeout(600);
+
+      assert.deepEqual(puts, [{ enabled: false, text: "Always answer in Portuguese." }], "an edit turned them on");
+      assert.match(await page.locator("main").innerText(), /switched off/i);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe("a bad response does not blank the app", () => {
   test("a routing preview of the wrong shape breaks nothing", async () => {
     // This is how the crash was found: a restored draft fires a preview on

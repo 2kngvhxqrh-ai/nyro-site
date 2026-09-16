@@ -219,6 +219,16 @@ and RETURNS whether it copied, so the button can say "Select and copy" instead
 of claiming a success it did not have. Before reaching for any other
 `navigator` API, check what it does on a LAN address.
 
+**24. A setting saved for the first time is a setting the user wants.**
+Custom instructions stored `enabled: false` on their first save, because that
+is what was already on record. The panel said so, which is honest and still
+left a user who had just written instructions with a setting that changed
+nothing until they found a second button. The first save switches them on; an
+edit to instructions already on record keeps the switch where the user left it,
+because "off" exists to park instructions you have, not to swallow ones you
+just wrote. Both directions are tested in `ui.browser.ts`, against a stateful
+stub — a fixed response cannot tell the two apart.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

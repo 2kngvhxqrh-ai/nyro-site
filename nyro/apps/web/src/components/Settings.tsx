@@ -333,6 +333,13 @@ function InstructionsPanel() {
   const trimmed = text.trim();
   const dirty = text !== saved.text;
   const active = saved.enabled && saved.text.trim().length > 0;
+  // Nobody writes instructions in order to keep them switched off, so the
+  // FIRST save turns them on. It used to store `enabled: false` and say so,
+  // which is honest and still leaves you with a setting that does nothing
+  // until you notice a second button. Off exists so you can park instructions
+  // you already have — which is why editing existing ones keeps the switch
+  // where you left it, and emptying the box switches them off either way.
+  const neverSaved = saved.text.trim().length === 0;
 
   return (
     <Panel
@@ -348,7 +355,12 @@ function InstructionsPanel() {
           <Button onClick={() => void remove()} disabled={busy || saved.text.length === 0}>Remove</Button>
           <Button
             variant="primary"
-            onClick={() => void write({ enabled: trimmed.length > 0 ? saved.enabled : false, text }, "Instructions saved.")}
+            onClick={() =>
+              void write(
+                { enabled: trimmed.length > 0 && (neverSaved || saved.enabled), text },
+                trimmed.length > 0 && neverSaved ? "Instructions saved, and switched on." : "Instructions saved.",
+              )
+            }
             disabled={busy || !dirty}
           >
             {busy ? "Saving…" : "Save"}
