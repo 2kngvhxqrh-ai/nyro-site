@@ -229,6 +229,25 @@ because "off" exists to park instructions you have, not to swallow ones you
 just wrote. Both directions are tested in `ui.browser.ts`, against a stateful
 stub — a fixed response cannot tell the two apart.
 
+**25. The demo must never offer what it cannot do.**
+The export buttons were `<a href="/api/export" download>`, and the demo
+intercepts `fetch` — which an `<a>` navigation never uses. So the demo's
+careful 409 ("Export needs the real NYRO API") was unreachable, and clicking
+Download saved the SPA fallback: an HTML file, named like an export, that
+looked like a successful backup of a database that page does not have. The
+panel now says why there is no export here. `ui.browser.ts` serves the
+PUBLISHED demo bundle at `/demo/` and opens it in a browser — until this it
+had only ever been run in Node, so nothing had ever clicked anything in it.
+
+**26. In a form, every control edits the same draft.**
+`Remove` in the routing-rules panel called `save()` with the current draft, so
+deleting one rule also wrote every unsaved change to the others. Add and edit
+were local; only Remove persisted. Now nothing in that panel persists except
+Save rules, an unsaved draft is marked as unsaved, and — per invariant 22 — it
+survives leaving the tab, because a half-filled rule lives nowhere else. It is
+NOT saved for the user: a rule NYRO has not been told to keep must not start
+steering routing.
+
 ## Honesty rules for this codebase
 
 The spec this was built from is explicit about it, and the code follows:

@@ -7,6 +7,8 @@
  */
 import { useEffect, useState } from "react";
 import { api, NyroApiError, type BudgetConfig, type BudgetState, type Instructions, type Model, type PerformanceState, type Provider, type RoutingRule } from "../api.ts";
+import { DEMO_MODE } from "../demo-mode.ts";
+import { recall, remember } from "../session-store.ts";
 import { Badge, Button, Empty, Field, formatCost, inputClass, Panel } from "./ui.tsx";
 
 /** An empty field means "no limit", which is different from zero. */
@@ -240,26 +242,41 @@ function ExportPanel() {
         totals. <span className="text-ink">No API keys are included</span> — they stay encrypted in the
         database and must be re-entered after a restore, which is stated inside the file too.
       </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <a
-          href="/api/export"
-          download
-          className="rounded border border-accent bg-accent/15 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/25"
-        >
-          Download JSON
-        </a>
-        <a
-          href="/api/export?format=markdown"
-          download
-          className="rounded border border-line px-3 py-1.5 text-xs text-body transition hover:border-dim hover:text-ink"
-        >
-          Download conversations as Markdown
-        </a>
-      </div>
-      <p className="prose-sans mt-2 text-[11.5px] leading-relaxed text-dim">
-        The JSON is for backup and migration. The Markdown is your conversations as prose — readable in any
-        text editor, with NYRO not running.
-      </p>
+      {DEMO_MODE ? (
+        // The demo answers /api/export with an honest 409 — and could never
+        // deliver it, because these were plain <a download> navigations and
+        // the demo intercepts fetch. The browser downloaded the SPA fallback
+        // instead: an HTML file, named like an export, that looked like a
+        // successful backup of a database this page does not have.
+        <p className="mt-3 rounded border border-line bg-sunk px-3 py-2 text-[11.5px] leading-relaxed text-dim">
+          <span className="text-ink">Not in this demo.</span> Export reads your database, and this page has
+          none — it runs NYRO&rsquo;s real router in the browser against a simulated provider. Run NYRO
+          yourself and the two buttons here give you the whole thing.
+        </p>
+      ) : (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href="/api/export"
+              download
+              className="rounded border border-accent bg-accent/15 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/25"
+            >
+              Download JSON
+            </a>
+            <a
+              href="/api/export?format=markdown"
+              download
+              className="rounded border border-line px-3 py-1.5 text-xs text-body transition hover:border-dim hover:text-ink"
+            >
+              Download conversations as Markdown
+            </a>
+          </div>
+          <p className="prose-sans mt-2 text-[11.5px] leading-relaxed text-dim">
+            The JSON is for backup and migration. The Markdown is your conversations as prose — readable in
+            any text editor, with NYRO not running.
+          </p>
+        </>
+      )}
     </Panel>
   );
 }
@@ -482,14 +499,46 @@ function MeasuredRoutingPanel() {
  * "coding goes to Claude" also applies to a local-only request — it does not,
  * and finding that out by surprise is worse than reading it here.
  */
+const RULES_DRAFT_KEY = "nyro.settings.rulesDraft";
+
 function RoutingRulesPanel({ providers, models }: { providers: Provider[]; models: Model[] }) {
-  const [rules, setRules] = useState<RoutingRule[]>([]);
+  // A draft you have not saved survives leaving this tab. Adding a rule used
+  // to be local state only, so filling one in and glancing at Chat threw it
+  // away without a word. Read in the initialiser, not an effect: see
+  // `session-store.ts`.
+  const [rules, setRules] = useState<RoutingRule[]>(() => {
+    const raw = recall(RULES_DRAFT_KEY);
+    if (raw === null) return [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as RoutingRule[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  /** What the server has. Anything else on screen is unsaved. */
+  const [onRecord, setOnRecord] = useState<RoutingRule[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    void api.routingRules().then((r) => setRules(r.rules)).catch(() => setRules([]));
+    void api
+      .routingRules()
+      .then((r) => {
+        setOnRecord(r.rules);
+        // A draft from before the tab switch wins over the server's copy; with
+        // no draft there is nothing to keep, so show what is saved.
+        if (recall(RULES_DRAFT_KEY) === null) setRules(r.rules);
+      })
+      .catch(() => setOnRecord([]));
   }, []);
+
+  const dirty = onRecord !== null && JSON.stringify(rules) !== JSON.stringify(onRecord);
+
+  useEffect(() => {
+    if (onRecord === null) return;
+    remember(RULES_DRAFT_KEY, dirty ? JSON.stringify(rules) : "");
+  }, [rules, onRecord, dirty]);
 
   async function save(next: RoutingRule[]): Promise<void> {
     setSaving(true);
@@ -497,6 +546,8 @@ function RoutingRulesPanel({ providers, models }: { providers: Provider[]; model
     try {
       const saved = await api.setRoutingRules(next);
       setRules(saved.rules);
+      setOnRecord(saved.rules);
+      remember(RULES_DRAFT_KEY, "");
     } catch (e) {
       setErr(e instanceof NyroApiError ? e.message : String(e));
     } finally {
@@ -527,15 +578,25 @@ function RoutingRulesPanel({ providers, models }: { providers: Provider[]; model
     <Panel
       title="Routing rules"
       actions={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {dirty ? <Badge tone="stop">unsaved</Badge> : null}
           <Button onClick={add} disabled={saving}>+ Add rule</Button>
-          <Button variant="primary" onClick={() => void save(rules)} disabled={saving}>
+          {dirty ? (
+            <Button onClick={() => setRules(onRecord ?? [])} disabled={saving}>Discard</Button>
+          ) : null}
+          <Button variant={dirty ? "primary" : "default"} onClick={() => void save(rules)} disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save rules"}
           </Button>
         </div>
       }
     >
       {err ? <p className="mb-3 rounded border border-stop/40 px-3 py-2 text-xs text-stop">{err}</p> : null}
+
+      {dirty ? (
+        <p className="mb-3 rounded border border-stop/40 px-3 py-2 text-[11.5px] text-stop">
+          Not saved yet — nothing here is steering routing until you press Save rules.
+        </p>
+      ) : null}
 
       {rules.length === 0 ? (
         <Empty>No rules. NYRO picks a model on quality, speed and cost for every request.</Empty>
@@ -557,7 +618,10 @@ function RoutingRulesPanel({ providers, models }: { providers: Provider[]; model
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-              <Button variant="danger" onClick={() => void save(rules.filter((_, idx) => idx !== i))}>Remove</Button>
+              {/* A local edit, like the fields beside it. It used to call save()
+                  with the CURRENT draft, so removing one rule quietly committed
+                  every unsaved change to the others. */}
+              <Button variant="danger" onClick={() => setRules(rules.filter((_, idx) => idx !== i))}>Remove</Button>
 
               <span className="self-center text-[11px] uppercase tracking-wider text-dim sm:col-start-3">prefer</span>
               <select

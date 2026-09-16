@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamChat, type ApiError, type Conversation, type Decision, type Instructions, type Model, type RoutePreview } from "../api.ts";
 import { copyText } from "../clipboard.ts";
+import { recall, remember } from "../session-store.ts";
 import { ConversationList } from "./ConversationList.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.tsx";
@@ -32,23 +33,6 @@ import { Badge, Button, Dot, Empty, formatCost, inputClass, Panel } from "./ui.t
 const RESUME_KEY = "nyro.chat.conversationId";
 const DRAFT_KEY = "nyro.chat.draft";
 const PANEL_KEY = "nyro.chat.requestPanel";
-
-function remember(key: string, value: string): void {
-  try {
-    if (value === "") sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
-  } catch {
-    /* private window, or storage disabled: the feature is a convenience */
-  }
-}
-
-function recall(key: string): string | null {
-  try {
-    return sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
 
 /** Enough of the instructions to recognise them, without reprinting an essay. */
 function firstLineOf(text: string): string {

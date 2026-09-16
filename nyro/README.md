@@ -15,7 +15,7 @@ None of them is the architecture.
 ## What actually works today
 
 Every row names the suite that covers it, so the claim is checkable rather
-than asserted — 314 tests (277 API, 37 web) plus 29 browser checks, run against
+than asserted — 314 tests (277 API, 37 web) plus 32 browser checks, run against
 a real Postgres and a real Chromium. The column used to read "working" or
 "working, tested", which distinguished nothing: every row was tested, so the
 weaker label was misinformation in the cautious direction.
@@ -35,6 +35,7 @@ weaker label was misinformation in the cautious direction.
 | Copy a whole answer, not only the code blocks inside it — over plain HTTP too | ui.browser |
 | One view that throws shows a message instead of blanking the app | ui.browser |
 | Export everything you own, and it really is everything | export, e2e |
+| The demo offers nothing it cannot do — no export button without a database | ui.browser |
 | Full-text search with snippets, saying when it capped | e2e, ui.browser |
 | Correct a model's price or context window; discovery will not overwrite it | e2e |
 | Markdown rendering with syntax-labelled, copyable code blocks | markdown |
@@ -44,7 +45,7 @@ weaker label was misinformation in the cautious direction.
 | Custom instructions: a standing system prompt you can switch off without losing | instructions, ui.browser |
 | Health checks per component; per-model run/latency/cost stats | e2e |
 | Spending limits: daily / weekly / monthly / per-request / per-provider | budget, e2e |
-| Task-specific routing rules ("coding goes to Claude") | routing-rules, e2e |
+| Task-specific routing rules ("coding goes to Claude"), draft kept until saved | routing-rules, e2e, ui.browser |
 | Measured routing: speed learned from real runs, not guessed | performance, e2e |
 | Single-process mode: the API serves the built UI on one origin | static |
 | Static serving that refuses path traversal and symlink escapes | static |

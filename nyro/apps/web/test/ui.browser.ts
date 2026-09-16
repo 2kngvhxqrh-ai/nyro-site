@@ -29,6 +29,7 @@ import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type Page } from "playwright";
 
 const DIST = new URL("../dist/", import.meta.url).pathname;
+const DEMO_DIST = new URL("../dist-demo/", import.meta.url).pathname;
 
 if (!existsSync(join(DIST, "index.html"))) {
   throw new Error("apps/web/dist is missing. Run `pnpm --filter @nyro/web build` first.");
@@ -140,12 +141,26 @@ let baseUrl: string;
 before(async () => {
   server = createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?")[0]!;
-    const rel = normalize(path === "/" ? "/index.html" : path).replace(/^(\.\.[/\\])+/, "");
+    // `/demo/…` serves the PUBLISHED demo bundle. It had never been opened in
+    // a browser — only run in Node by demo-core.test.ts — and the export
+    // links were a plain <a download>, which the demo's fetch interception
+    // cannot see: the browser saved the SPA fallback as your "export".
+    const demo = path === "/demo" || path.startsWith("/demo/");
+    const root = demo ? DEMO_DIST : DIST;
+    const within = demo ? path.slice("/demo".length) || "/" : path;
+    const rel = normalize(within === "/" ? "/index.html" : within).replace(/^(\.\.[/\\])+/, "");
     try {
-      const body = await readFile(join(DIST, rel));
+      const body = await readFile(join(root, rel));
       res.writeHead(200, { "content-type": TYPES[extname(rel)] ?? "application/octet-stream" });
       res.end(body);
     } catch {
+      // A static host answers an unknown path with the app, which is what made
+      // the bug above look like a successful download rather than a 404.
+      if (demo && extname(rel) === "") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(await readFile(join(root, "index.html")));
+        return;
+      }
       res.writeHead(404, {});
       res.end("not found");
     }
@@ -797,6 +812,103 @@ describe("instructions you just wrote are actually in effect", () => {
 
       assert.deepEqual(puts, [{ enabled: false, text: "Always answer in Portuguese." }], "an edit turned them on");
       assert.match(await page.locator("main").innerText(), /switched off/i);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("a routing rule you have not saved", () => {
+  async function openRules(page: Page) {
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.waitForTimeout(700);
+  }
+
+  test("survives leaving the tab, and says it is not saved", async () => {
+    // Adding a rule was local state only: fill one in, glance at Chat, and it
+    // was gone without a word. A half-configured rule must not be saved for
+    // you either — it would start steering routing — so it is kept as a draft
+    // and marked as one.
+    const page = await open(1280);
+    const puts: string[] = [];
+    await page.route("**/api/routing-rules", async (route) => {
+      if (route.request().method() === "PUT") puts.push(route.request().postData() ?? "");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+    });
+    try {
+      await openRules(page);
+      await page.getByRole("button", { name: "+ Add rule" }).click();
+      await page.waitForTimeout(300);
+      await page.locator('input[value="New rule"]').fill("coding goes to Ollama");
+      await page.waitForTimeout(200);
+      assert.match(await page.locator("main").innerText(), /not saved yet/i, "nothing said it was unsaved");
+
+      await page.getByRole("button", { name: "Chat", exact: true }).click();
+      await page.waitForTimeout(500);
+      await openRules(page);
+
+      assert.equal(
+        await page.locator('input[value="coding goes to Ollama"]').count(),
+        1,
+        "the rule was lost on a tab switch",
+      );
+      assert.deepEqual(puts, [], "a half-configured rule was saved without being asked");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("and Remove no longer commits the edits you had not saved", async () => {
+    // Remove called save() with the CURRENT draft, so deleting one rule also
+    // wrote every pending change to the others. It is a local edit now, like
+    // the fields beside it.
+    const saved = [
+      { id: "r1", enabled: true, name: "first", whenCapability: "coding", preferModelId: null, preferProviderId: "ollama" },
+      { id: "r2", enabled: true, name: "second", whenCapability: "reasoning", preferModelId: null, preferProviderId: "ollama" },
+    ];
+    const page = await open(1280);
+    const puts: string[] = [];
+    await page.route("**/api/routing-rules", async (route) => {
+      if (route.request().method() === "PUT") puts.push(route.request().postData() ?? "");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: saved }) });
+    });
+    try {
+      await openRules(page);
+      await page.locator('input[value="first"]').fill("renamed but not saved");
+      await page.getByRole("button", { name: "Remove" }).last().click();
+      await page.waitForTimeout(500);
+
+      assert.deepEqual(puts, [], "Remove wrote an edit the user had not saved");
+      assert.match(await page.locator("main").innerText(), /not saved yet/i);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("the published demo offers nothing it cannot do", () => {
+  test("no export link that would save the page as your backup", async () => {
+    // The demo answers /api/export with an honest 409 and could never deliver
+    // it: these were <a href download> navigations and the demo intercepts
+    // fetch. The browser downloaded the SPA fallback — an HTML file, named
+    // like an export, that looked like a successful backup.
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    let downloaded: string | null = null;
+    page.on("download", (d) => { downloaded = d.suggestedFilename(); });
+    try {
+      await page.goto(`${baseUrl}demo/`, { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.waitForTimeout(900);
+
+      const text = await page.locator("main").innerText();
+      assert.match(text, /Your data/i, "the export panel is not on screen, so this proves nothing");
+      assert.equal(
+        await page.locator('a[href^="/api/export"]').count(),
+        0,
+        "the demo still offers a download it cannot produce",
+      );
+      assert.match(text, /not in this demo/i, "it does not say why the export is absent");
+      assert.equal(downloaded, null, "something was downloaded");
     } finally {
       await page.close();
     }
