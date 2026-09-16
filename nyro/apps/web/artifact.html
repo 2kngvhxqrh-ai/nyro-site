@@ -1,0 +1,15 @@
+<title>NYRO Model Router</title>
+
+<!--
+  The Artifact wrapper supplies <!doctype>, <html>, <head> and <body>, so this
+  file carries only NYRO's own head content and its mount point.
+
+  nyro.css sets html/body/#root to full height and paints an explicit
+  background, so the page does not borrow the host's ground. It also carries
+  the IBM Plex faces, which NYRO serves itself rather than fetching from a font
+  CDN -- so this page makes no third-party request at all.
+-->
+<link rel="stylesheet" href="./nyro.css" />
+
+<div id="root"></div>
+<script type="module" src="./nyro.js"></script>
